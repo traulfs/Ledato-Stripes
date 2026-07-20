@@ -10,9 +10,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'geometry.dart';
 import 'model.dart';
+import 'yaml_config.dart';
 
 /// Zentraler App-Zustand: Stripes, Hintergrundbild, globale Darstellung.
-/// Änderungen werden verzögert automatisch als JSON gespeichert.
+/// Änderungen werden verzögert automatisch als YAML-Datei gespeichert.
 class AppState extends ChangeNotifier {
   final List<LedStrip> strips = [];
   String? selectedId;
@@ -218,43 +219,30 @@ class AppState extends ChangeNotifier {
 
   Future<File> _configFile() async {
     final dir = await getApplicationSupportDirectory();
+    return File('${dir.path}/ledato_stripes_config.yaml');
+  }
+
+  Future<File> _legacyJsonFile() async {
+    final dir = await getApplicationSupportDirectory();
     return File('${dir.path}/ledato_stripes_config.json');
   }
 
   Future<void> save() async {
     if (kIsWeb) return;
     final file = await _configFile();
-    final data = {
-      'strips': strips.map((s) => s.toJson()).toList(),
-      'backgroundPath': backgroundPath,
-      'backgroundDim': backgroundDim,
-      'ledSize': ledSize,
-      'glow': glow,
-      'sceneWidthMeters': sceneWidthMeters,
-    };
-    await file.writeAsString(const JsonEncoder.withIndent('  ').convert(data));
+    await file.writeAsString(encodeConfigYaml(this));
   }
 
   Future<void> load() async {
     try {
       if (!kIsWeb) {
-        final file = await _configFile();
+        var file = await _configFile();
+        if (!await file.exists()) {
+          await _migrateLegacyJsonIfPresent();
+          file = await _configFile();
+        }
         if (await file.exists()) {
-          final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-          strips
-            ..clear()
-            ..addAll((data['strips'] as List)
-                .map((e) => LedStrip.fromJson(e as Map<String, dynamic>))
-                .take(kMaxStrips));
-          backgroundDim = (data['backgroundDim'] as num?)?.toDouble() ?? 0.5;
-          ledSize = (data['ledSize'] as num?)?.toDouble() ?? 6;
-          glow = (data['glow'] as num?)?.toDouble() ?? 1.0;
-          sceneWidthMeters =
-              (data['sceneWidthMeters'] as num?)?.toDouble() ?? 5.0;
-          final path = data['backgroundPath'] as String?;
-          if (path != null && await File(path).exists()) {
-            await setBackgroundBytes(await File(path).readAsBytes(), path);
-          }
+          await _loadFromYamlFile(file);
         }
       }
     } catch (e) {
@@ -263,6 +251,52 @@ class AppState extends ChangeNotifier {
     if (strips.isEmpty) addStrip();
     _loaded = true;
     notifyListeners();
+  }
+
+  Future<void> _loadFromYamlFile(File file) async {
+    final path = applyConfigYaml(this, await file.readAsString());
+    if (path != null && await File(path).exists()) {
+      await setBackgroundBytes(await File(path).readAsBytes(), path);
+    }
+  }
+
+  /// Liest eine Konfiguration im alten JSON-Format einmalig ein und
+  /// speichert sie sofort im neuen YAML-Format weiter, damit bestehende
+  /// Konfigurationen den Formatwechsel überstehen.
+  Future<void> _migrateLegacyJsonIfPresent() async {
+    final legacy = await _legacyJsonFile();
+    if (!await legacy.exists()) return;
+    final data = jsonDecode(await legacy.readAsString()) as Map<String, dynamic>;
+    strips
+      ..clear()
+      ..addAll((data['strips'] as List)
+          .map((e) => LedStrip.fromJson(e as Map<String, dynamic>))
+          .take(kMaxStrips));
+    backgroundDim = (data['backgroundDim'] as num?)?.toDouble() ?? 0.5;
+    ledSize = (data['ledSize'] as num?)?.toDouble() ?? 6;
+    glow = (data['glow'] as num?)?.toDouble() ?? 1.0;
+    sceneWidthMeters = (data['sceneWidthMeters'] as num?)?.toDouble() ?? 5.0;
+    final path = data['backgroundPath'] as String?;
+    if (path != null && await File(path).exists()) {
+      await setBackgroundBytes(await File(path).readAsBytes(), path);
+    }
+    final file = await _configFile();
+    await file.writeAsString(encodeConfigYaml(this));
+  }
+
+  // ---------- Export / Import (YAML-Datei nach Wahl des Nutzers) ----------
+
+  String exportYamlText() => encodeConfigYaml(this);
+
+  Future<void> importYamlText(String text) async {
+    final path = applyConfigYaml(this, text);
+    background = null;
+    backgroundPath = null;
+    if (path != null && await File(path).exists()) {
+      await setBackgroundBytes(await File(path).readAsBytes(), path);
+    } else {
+      changed();
+    }
   }
 
   static const _defaultColors = [

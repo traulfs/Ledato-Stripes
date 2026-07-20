@@ -71,22 +71,8 @@ class LedStrip {
   bool enabled;
   bool curved; // Kurve (Spline) durch die Punkte statt gerader Segmente
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'ledsPerMeter': ledsPerMeter,
-        'ledCount': ledCount,
-        'points': points.expand((p) => [p.dx, p.dy]).toList(),
-        'effect': effect.name,
-        'color': color.toARGB32(),
-        'color2': color2.toARGB32(),
-        'brightness': brightness,
-        'speed': speed,
-        'reversed': reversed,
-        'enabled': enabled,
-        'curved': curved,
-      };
-
+  /// Liest eine Konfiguration im alten JSON-Format (vor Einführung der
+  /// YAML-Persistenz) für die einmalige Migration.
   factory LedStrip.fromJson(Map<String, dynamic> json) {
     final raw = (json['points'] as List).cast<num>();
     final points = <Offset>[

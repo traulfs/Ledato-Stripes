@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'app_state.dart';
 import 'editor_canvas.dart';
@@ -59,15 +64,78 @@ class _EditorScreenState extends State<EditorScreen>
     super.dispose();
   }
 
+  // iOS wertet beim Öffnen-Dialog ausschließlich "uniformTypeIdentifiers"
+  // aus (nicht "extensions") und wirft sonst einen ArgumentError; die UTIs
+  // sind daher immer mit angegeben, "extensions" bleibt für macOS/Windows/Linux.
+  static const _imageTypeGroup = XTypeGroup(
+    label: 'Bilder',
+    extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'],
+    uniformTypeIdentifiers: ['public.image'],
+  );
+
+  static const _yamlTypeGroup = XTypeGroup(
+    label: 'YAML',
+    extensions: ['yaml', 'yml'],
+    uniformTypeIdentifiers: ['public.yaml'],
+  );
+
   Future<void> _pickBackground() async {
-    const typeGroup = XTypeGroup(
-      label: 'Bilder',
-      extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp', 'gif'],
-    );
-    final file = await openFile(acceptedTypeGroups: [typeGroup]);
-    if (file == null) return;
-    final bytes = await file.readAsBytes();
-    await state.setBackgroundBytes(bytes, file.path);
+    try {
+      final file = await openFile(acceptedTypeGroups: const [_imageTypeGroup]);
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      await state.setBackgroundBytes(bytes, file.path);
+    } catch (e) {
+      _showError('Bild konnte nicht geöffnet werden: $e');
+    }
+  }
+
+  /// iOS und Android unterstützen im file_selector-Plugin kein natives
+  /// "Speichern unter" (getSaveLocation ist dort nicht implementiert) —
+  /// dort wird stattdessen der native Teilen-Dialog genutzt, über den sich
+  /// die Datei z. B. per "In Dateien sichern" ablegen lässt.
+  Future<void> _exportConfig() async {
+    final text = state.exportYamlText();
+    try {
+      if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/ledato_stripes_config.yaml');
+        await file.writeAsString(text);
+        await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)],
+          subject: 'Ledato Stripes Konfiguration',
+        ));
+        return;
+      }
+      final location = await getSaveLocation(
+        suggestedName: 'ledato_stripes_config.yaml',
+        acceptedTypeGroups: const [_yamlTypeGroup],
+      );
+      if (location == null) return;
+      var path = location.path;
+      final lower = path.toLowerCase();
+      if (!lower.endsWith('.yaml') && !lower.endsWith('.yml')) {
+        path = '$path.yaml';
+      }
+      await File(path).writeAsString(text);
+    } catch (e) {
+      _showError('Konfiguration konnte nicht gespeichert werden: $e');
+    }
+  }
+
+  Future<void> _importConfig() async {
+    try {
+      final file = await openFile(acceptedTypeGroups: const [_yamlTypeGroup]);
+      if (file == null) return;
+      await state.importYamlText(await file.readAsString());
+    } catch (e) {
+      _showError('YAML konnte nicht geladen werden: $e');
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -94,6 +162,17 @@ class _EditorScreenState extends State<EditorScreen>
                   icon: const Icon(Icons.hide_image_outlined),
                   onPressed: state.clearBackground,
                 ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Konfiguration als YAML speichern',
+                icon: const Icon(Icons.save_outlined),
+                onPressed: _exportConfig,
+              ),
+              IconButton(
+                tooltip: 'Konfiguration aus YAML laden',
+                icon: const Icon(Icons.file_open_outlined),
+                onPressed: _importConfig,
+              ),
               const SizedBox(width: 8),
               SegmentedButton<bool>(
                 segments: const [
