@@ -8,7 +8,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'geometry.dart';
 import 'model.dart';
 import 'yaml_config.dart';
 
@@ -17,8 +16,10 @@ import 'yaml_config.dart';
 class AppState extends ChangeNotifier {
   final List<LedStrip> strips = [];
   String? selectedId;
-  bool simulate = true; // true = Simulation läuft, false = Editiermodus-Standbild
-  bool editMode = true; // Handles/Polylinien anzeigen und bearbeiten
+  int selectedSectionIndex = 0;
+  bool simulate =
+      true; // true = Simulation läuft, false = Editiermodus-Standbild
+  bool editMode = true; // Handles/Linien anzeigen und bearbeiten
 
   ui.Image? background;
   String? backgroundPath;
@@ -30,82 +31,47 @@ class AppState extends ChangeNotifier {
   double sceneWidthMeters = 5.0;
 
   /// Seitenverhältnis (Höhe/Breite) des Bildbereichs; wird von der Leinwand
-  /// beim Layout gesetzt und für Längenberechnungen benötigt.
+  /// beim Layout gesetzt und für die Winkel-Umrechnung benötigt.
   double contentAspect = 1.0;
 
-  /// Stützpunkte eines Stripes in Metern.
-  List<Offset> meterPoints(LedStrip s) => [
-        for (final p in s.points)
-          Offset(p.dx * sceneWidthMeters,
-              p.dy * sceneWidthMeters * contentAspect),
-      ];
+  /// Physischer Abstand zwischen erster und letzter LED eines Abschnitts:
+  /// (LED-Anzahl − 1) ÷ Stripe-Dichte. So liegt der Endpunkt eines
+  /// Abschnitts exakt auf der letzten LED (kein zusätzlicher halber Pitch
+  /// als Rand).
+  double sectionTargetLengthMeters(LedStrip s, StripSection sec) =>
+      sec.ledCount > 1 ? (sec.ledCount - 1) / s.ledsPerMeter : 0.0;
 
-  /// Physische Länge des Stripes in Metern (entlang der ggf. gebogenen Form).
-  double stripLengthMeters(LedStrip s) {
-    var total = 0.0;
-    for (final seg in sampledSegments(meterPoints(s), s.curved)) {
-      for (var i = 0; i < seg.length - 1; i++) {
-        total += (seg[i + 1] - seg[i]).distance;
-      }
-    }
-    return total;
+  /// Physische Gesamtlänge des Stripes — Summe über alle Abschnitte.
+  double targetLengthMeters(LedStrip s) => s.sections.fold(
+    0.0,
+    (sum, sec) => sum + sectionTargetLengthMeters(s, sec),
+  );
+
+  /// Endpunkt eines Abschnitts (normalisierte Bildkoordinate), berechnet aus
+  /// Anfangspunkt, Winkel und Länge. Der Winkel wird im metergetreuen Raum
+  /// interpretiert (nicht im rohen 0..1-Bildraum), damit er unabhängig vom
+  /// Bildseitenverhältnis immer real gerade erscheint — Meter- und
+  /// Bildschirm-Pixel-Raum sind über eine gleichförmige (winkeltreue)
+  /// Skalierung verbunden, nur die Umrechnung von normalisierten Koordinaten
+  /// in Meter hängt vom Seitenverhältnis ab.
+  Offset sectionEnd(LedStrip s, StripSection sec) {
+    final len = sectionTargetLengthMeters(s, sec);
+    final dxMeters = len * math.cos(sec.angle);
+    final dyMeters = len * math.sin(sec.angle);
+    final ay = contentAspect > 1e-6 ? contentAspect : 1.0;
+    return Offset(
+      sec.start.dx + dxMeters / sceneWidthMeters,
+      sec.start.dy + dyMeters / (sceneWidthMeters * ay),
+    );
   }
 
-  /// Physische Länge des Stripes: Anzahl LEDs ÷ Dichte.
-  double targetLengthMeters(LedStrip s) => s.ledCount / s.ledsPerMeter;
-
-  /// Skaliert die gezeichnete Form um ihren Mittelpunkt so, dass ihre
-  /// Bogenlänge exakt der physischen Stripe-Länge entspricht — der Stripe
-  /// verhält sich wie ein Band fester Länge, das man nur biegt, und bleibt
-  /// dabei an Ort und Stelle.
-  void normalizeStripLength(LedStrip s) {
-    final target = targetLengthMeters(s);
-    final current = stripLengthMeters(s);
-    if (s.points.length < 2 || current < 1e-6) {
-      final start = s.points.isEmpty ? const Offset(0.1, 0.5) : s.points.first;
-      s.points = [start, start + Offset(target / sceneWidthMeters, 0)];
-      return;
-    }
-    final k = target / current;
-    if ((k - 1).abs() < 1e-4) return;
-    final c = _bbox(s.points).center;
-    s.points = [for (final p in s.points) c + (p - c) * k];
-  }
-
-  static Rect _bbox(List<Offset> pts) {
-    var minX = double.infinity, maxX = -double.infinity;
-    var minY = double.infinity, maxY = -double.infinity;
-    for (final p in pts) {
-      minX = math.min(minX, p.dx);
-      maxX = math.max(maxX, p.dx);
-      minY = math.min(minY, p.dy);
-      maxY = math.max(maxY, p.dy);
-    }
-    return Rect.fromLTRB(minX, minY, maxX, maxY);
-  }
-
-  /// Verschiebt die Form (ohne sie zu verzerren) möglichst in den Bildbereich;
-  /// ist sie größer als das Bild, wird sie zentriert.
-  void _shiftIntoView(LedStrip s) {
-    final b = _bbox(s.points);
-    double shift(double min, double max) {
-      const m = 0.02;
-      if (max - min > 1 - 2 * m) return 0.5 - (min + max) / 2;
-      if (min < m) return m - min;
-      if (max > 1 - m) return (1 - m) - max;
-      return 0;
-    }
-
-    final d = Offset(shift(b.left, b.right), shift(b.top, b.bottom));
-    if (d != Offset.zero) {
-      s.points = [for (final p in s.points) p + d];
-    }
-  }
-
-  void normalizeAllStrips() {
-    for (final s in strips) {
-      normalizeStripLength(s);
-    }
+  /// Setzt die LED-Anzahl eines Abschnitts; die Summe über alle Abschnitte
+  /// des Stripes bleibt dabei auf [kMaxLedsPerStrip] begrenzt.
+  void setSectionLedCount(LedStrip s, StripSection sec, int n) {
+    final others = s.ledCount - sec.ledCount;
+    final maxForThis = (kMaxLedsPerStrip - others).clamp(1, kMaxLedsPerStrip);
+    sec.ledCount = n.clamp(1, maxForThis);
+    changed();
   }
 
   Timer? _saveTimer;
@@ -118,8 +84,24 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  /// Der gerade zur Bearbeitung ausgewählte Abschnitt des ausgewählten
+  /// Stripes (Index wird auf die vorhandenen Abschnitte geklemmt).
+  StripSection? get selectedSection {
+    final s = selected;
+    if (s == null || s.sections.isEmpty) return null;
+    return s.sections[selectedSectionIndex.clamp(0, s.sections.length - 1)];
+  }
+
   void select(String? id) {
     selectedId = id;
+    selectedSectionIndex = 0;
+    notifyListeners();
+  }
+
+  void selectSection(int index) {
+    final s = selected;
+    if (s == null || s.sections.isEmpty) return;
+    selectedSectionIndex = index.clamp(0, s.sections.length - 1);
     notifyListeners();
   }
 
@@ -130,74 +112,127 @@ class AppState extends ChangeNotifier {
     final strip = LedStrip(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       name: 'Stripe $n',
-      points: [Offset(0.1, y), Offset(0.9, y)],
-      color: _defaultColors[(n - 1) % _defaultColors.length],
+      sections: [
+        StripSection(
+          start: Offset(0.1, y),
+          color: _defaultColors[(n - 1) % _defaultColors.length],
+        ),
+      ],
     );
     strips.add(strip);
     selectedId = strip.id;
-    normalizeStripLength(strip);
+    selectedSectionIndex = 0;
     changed();
     return strip;
   }
 
-  /// Ersetzt die Stützpunkte des Stripes durch eine Form-Vorlage,
-  /// zentriert auf der bisherigen Position des Stripes. Die Vorlage wird
-  /// über [contentAspect] entzerrt, damit z. B. ein Kreis auch auf einem
-  /// breiten Bild rund ist, und anschließend auf die Stripe-Länge skaliert.
-  void applyShapeTemplate(LedStrip s, StripShape shape) {
-    final c = s.points.isEmpty ? const Offset(0.5, 0.5) : _bbox(s.points).center;
+  /// Fügt dem Stripe einen weiteren, unabhängig platzierbaren Abschnitt
+  /// hinzu (z. B. für eine Lücke hinter einem Möbelstück oder eine zweite
+  /// Wand ohne direkten Sichtbezug) — LEDs zählen nahtlos über die
+  /// Abschnittsgrenze hinweg weiter, als wäre es ein durchgehendes Stück.
+  /// Startet als gerade Fortsetzung am Ende des letzten Abschnitts. Die
+  /// LED-Anzahl des neuen Abschnitts wird vom verbleibenden Budget des
+  /// Stripes (max. [kMaxLedsPerStrip] insgesamt) abgezweigt.
+  void addSection(LedStrip s) {
+    final remaining = kMaxLedsPerStrip - s.ledCount;
+    if (remaining <= 0) return;
+    final last = s.sections.isNotEmpty ? s.sections.last : null;
+    final start = last != null ? sectionEnd(s, last) : const Offset(0.1, 0.5);
+    final section = StripSection(
+      start: Offset(start.dx.clamp(0.02, 0.98), start.dy.clamp(0.02, 0.98)),
+      angle: last?.angle ?? 0.0,
+      ledCount: (remaining < 60 ? remaining : 60),
+      color: last?.color ?? _defaultColors.first,
+    );
+    s.sections.add(section);
+    selectedSectionIndex = s.sections.length - 1;
+    changed();
+  }
 
-    List<Offset> rel;
-    var curved = false;
-    switch (shape) {
-      case StripShape.line:
-        rel = const [Offset(-0.35, 0), Offset(0.35, 0)];
-      case StripShape.rect:
-        rel = const [
-          Offset(-0.28, -0.18),
-          Offset(0.28, -0.18),
-          Offset(0.28, 0.18),
-          Offset(-0.28, 0.18),
-          Offset(-0.28, -0.18),
-        ];
-      case StripShape.circle:
-        const r = 0.22;
-        rel = [
-          for (var k = 0; k <= 8; k++)
-            Offset(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)),
-        ];
-        curved = true;
-      case StripShape.zigzag:
-        const x = 0.3;
-        const rows = [-0.18, -0.06, 0.06, 0.18];
-        rel = [
-          for (var k = 0; k < rows.length; k++) ...[
-            Offset(k.isEven ? -x : x, rows[k]),
-            Offset(k.isEven ? x : -x, rows[k]),
-          ],
-        ];
+  /// Entfernt einen Abschnitt (ein Stripe muss mindestens einen behalten).
+  void removeSection(LedStrip s, int index) {
+    if (s.sections.length <= 1 || index < 0 || index >= s.sections.length) {
+      return;
     }
-
-    // y-Offsets entzerren, damit die Form auf dem Bild unverzerrt erscheint.
-    final ay = contentAspect > 1e-6 ? 1 / contentAspect : 1.0;
-    s.points = [
-      for (final p in rel) Offset(c.dx + p.dx, c.dy + p.dy * ay),
-    ];
-    s.curved = curved;
-    normalizeStripLength(s);
-    _shiftIntoView(s);
+    s.sections.removeAt(index);
+    if (selectedSectionIndex >= s.sections.length) {
+      selectedSectionIndex = s.sections.length - 1;
+    }
     changed();
   }
 
   void removeStrip(LedStrip s) {
     strips.remove(s);
-    if (selectedId == s.id) selectedId = null;
+    if (selectedId == s.id) {
+      selectedId = null;
+      selectedSectionIndex = 0;
+    }
     changed();
   }
 
-  /// Nach jeder Mutation aufrufen: benachrichtigt die UI und speichert verzögert.
+  // ---------- Undo / Redo ----------
+  //
+  // Statt vor jeder einzelnen Aktion explizit einen Schnappschuss zu ziehen,
+  // wird der Stand vor dem *ersten* Aufruf von [changed()] einer zusammen-
+  // hängenden Änderungsserie gemerkt und erst nach einer kurzen Ruhephase auf
+  // den Undo-Stack gelegt. Dadurch wird z. B. ein ganzer Drag-Vorgang (der
+  // pro Frame [changed()] aufruft) zu genau einem Undo-Schritt.
+
+  final List<_Snapshot> _undoStack = [];
+  final List<_Snapshot> _redoStack = [];
+  _Snapshot? _pendingUndo;
+  Timer? _undoCoalesceTimer;
+  static const _maxUndoDepth = 50;
+
+  bool get canUndo => _pendingUndo != null || _undoStack.isNotEmpty;
+  bool get canRedo => _redoStack.isNotEmpty;
+
+  void _commitPendingUndo() {
+    final pending = _pendingUndo;
+    if (pending == null) return;
+    _undoStack.add(pending);
+    if (_undoStack.length > _maxUndoDepth) _undoStack.removeAt(0);
+    _pendingUndo = null;
+  }
+
+  /// Undo/Redo lösen selbst keinen neuen Undo-Schritt aus und benachrichtigen
+  /// direkt, statt über [changed()] zu laufen (das würde den gerade erst
+  /// befüllten Redo-Stack sofort wieder leeren).
+  void undo() {
+    _undoCoalesceTimer?.cancel();
+    _commitPendingUndo();
+    if (_undoStack.isEmpty) return;
+    _redoStack.add(_Snapshot(this));
+    _undoStack.removeLast().restoreTo(this);
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  void redo() {
+    if (_redoStack.isEmpty) return;
+    _undoStack.add(_Snapshot(this));
+    _redoStack.removeLast().restoreTo(this);
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  /// Nach jeder Mutation aufrufen: benachrichtigt die UI, merkt den Zustand
+  /// für Undo vor und speichert verzögert.
   void changed() {
     notifyListeners();
+    if (_loaded) {
+      _pendingUndo ??= _Snapshot(this);
+      _redoStack.clear();
+      _undoCoalesceTimer?.cancel();
+      _undoCoalesceTimer = Timer(
+        const Duration(milliseconds: 600),
+        _commitPendingUndo,
+      );
+    }
+    _scheduleSave();
+  }
+
+  void _scheduleSave() {
     if (!_loaded || kIsWeb) return;
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 800), save);
@@ -266,12 +301,15 @@ class AppState extends ChangeNotifier {
   Future<void> _migrateLegacyJsonIfPresent() async {
     final legacy = await _legacyJsonFile();
     if (!await legacy.exists()) return;
-    final data = jsonDecode(await legacy.readAsString()) as Map<String, dynamic>;
+    final data =
+        jsonDecode(await legacy.readAsString()) as Map<String, dynamic>;
     strips
       ..clear()
-      ..addAll((data['strips'] as List)
-          .map((e) => LedStrip.fromJson(e as Map<String, dynamic>))
-          .take(kMaxStrips));
+      ..addAll(
+        (data['strips'] as List)
+            .map((e) => LedStrip.fromJson(e as Map<String, dynamic>))
+            .take(kMaxStrips),
+      );
     backgroundDim = (data['backgroundDim'] as num?)?.toDouble() ?? 0.5;
     ledSize = (data['ledSize'] as num?)?.toDouble() ?? 6;
     glow = (data['glow'] as num?)?.toDouble() ?? 1.0;
@@ -299,6 +337,13 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  @override
+  void dispose() {
+    _saveTimer?.cancel();
+    _undoCoalesceTimer?.cancel();
+    super.dispose();
+  }
+
   static const _defaultColors = [
     Color(0xFFFF6000),
     Color(0xFF00C8FF),
@@ -309,4 +354,39 @@ class AppState extends ChangeNotifier {
     Color(0xFFFF4020),
     Color(0xFF00FFB0),
   ];
+}
+
+/// Schnappschuss des editierbaren Zustands für Undo/Redo. Das Hintergrundbild
+/// selbst gehört bewusst nicht dazu (seltene, gezielte Aktion statt Editier-
+/// schritt) — Undo betrifft Stripes (inkl. Abschnitte), Auswahl und die
+/// globale Darstellung.
+class _Snapshot {
+  _Snapshot(AppState s)
+    : strips = [for (final strip in s.strips) strip.clone()],
+      selectedId = s.selectedId,
+      selectedSectionIndex = s.selectedSectionIndex,
+      sceneWidthMeters = s.sceneWidthMeters,
+      backgroundDim = s.backgroundDim,
+      ledSize = s.ledSize,
+      glow = s.glow;
+
+  final List<LedStrip> strips;
+  final String? selectedId;
+  final int selectedSectionIndex;
+  final double sceneWidthMeters;
+  final double backgroundDim;
+  final double ledSize;
+  final double glow;
+
+  void restoreTo(AppState s) {
+    s.strips
+      ..clear()
+      ..addAll([for (final strip in strips) strip.clone()]);
+    s.selectedId = s.strips.any((e) => e.id == selectedId) ? selectedId : null;
+    s.selectedSectionIndex = selectedSectionIndex;
+    s.sceneWidthMeters = sceneWidthMeters;
+    s.backgroundDim = backgroundDim;
+    s.ledSize = ledSize;
+    s.glow = glow;
+  }
 }

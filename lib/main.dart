@@ -4,18 +4,26 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'app_state.dart';
 import 'editor_canvas.dart';
+import 'labeled_slider.dart';
 import 'strip_panel.dart';
 
 void main() {
   runApp(const LedatoApp());
 }
 
-enum _FileAction { pickBackground, clearBackground, exportConfig, importConfig }
+enum _FileAction {
+  pickBackground,
+  clearBackground,
+  exportConfig,
+  importConfig,
+  sceneWidth,
+}
 
 class LedatoApp extends StatelessWidget {
   const LedatoApp({super.key});
@@ -103,10 +111,12 @@ class _EditorScreenState extends State<EditorScreen>
         final dir = await getTemporaryDirectory();
         final file = File('${dir.path}/ledato_stripes_config.yaml');
         await file.writeAsString(text);
-        await SharePlus.instance.share(ShareParams(
-          files: [XFile(file.path)],
-          subject: 'Ledato Stripes Konfiguration',
-        ));
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(file.path)],
+            subject: 'Ledato Stripes Konfiguration',
+          ),
+        );
         return;
       }
       final location = await getSaveLocation(
@@ -137,7 +147,52 @@ class _EditorScreenState extends State<EditorScreen>
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _showSceneWidthDialog() async {
+    await showDialog(
+      context: context,
+      builder: (context) => ListenableBuilder(
+        listenable: state,
+        builder: (context, _) => AlertDialog(
+          title: const Text('Maßstab'),
+          content: SizedBox(
+            width: 340,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LabeledSlider(
+                  label: 'Bildbreite',
+                  value: state.sceneWidthMeters,
+                  min: 0.5,
+                  max: 30,
+                  display: fmtMeters(state.sceneWidthMeters),
+                  onChanged: (v) {
+                    state.sceneWidthMeters = v;
+                    state.changed();
+                  },
+                ),
+                Text(
+                  'Reale Breite des Hintergrundbilds — darüber werden '
+                  'Stripe-Längen und LED-Anzahl berechnet.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Fertig'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -149,109 +204,156 @@ class _EditorScreenState extends State<EditorScreen>
         final canvas = EditorCanvas(state: state, time: time);
         final panel = StripPanel(state: state);
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Ledato Stripes'),
-            actions: [
-              PopupMenuButton<_FileAction>(
-                tooltip: 'Datei',
-                icon: const Icon(Icons.menu),
-                onSelected: (action) {
-                  switch (action) {
-                    case _FileAction.pickBackground:
-                      _pickBackground();
-                    case _FileAction.clearBackground:
-                      state.clearBackground();
-                    case _FileAction.exportConfig:
-                      _exportConfig();
-                    case _FileAction.importConfig:
-                      _importConfig();
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: _FileAction.pickBackground,
-                    child: ListTile(
-                      leading: Icon(Icons.image_outlined),
-                      title: Text('Hintergrundbild wählen'),
-                    ),
+        return CallbackShortcuts(
+          bindings: {
+            LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ):
+                state.undo,
+            LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ):
+                state.undo,
+            LogicalKeySet(
+              LogicalKeyboardKey.meta,
+              LogicalKeyboardKey.shift,
+              LogicalKeyboardKey.keyZ,
+            ): state.redo,
+            LogicalKeySet(
+              LogicalKeyboardKey.control,
+              LogicalKeyboardKey.shift,
+              LogicalKeyboardKey.keyZ,
+            ): state.redo,
+          },
+          child: Focus(
+            autofocus: true,
+            child: Scaffold(
+              appBar: AppBar(
+                title: const Text('Ledato Stripes'),
+                actions: [
+                  IconButton(
+                    tooltip: 'Rückgängig',
+                    icon: const Icon(Icons.undo),
+                    onPressed: state.canUndo ? state.undo : null,
                   ),
-                  if (state.background != null)
-                    const PopupMenuItem(
-                      value: _FileAction.clearBackground,
-                      child: ListTile(
-                        leading: Icon(Icons.hide_image_outlined),
-                        title: Text('Hintergrundbild entfernen'),
+                  IconButton(
+                    tooltip: 'Wiederholen',
+                    icon: const Icon(Icons.redo),
+                    onPressed: state.canRedo ? state.redo : null,
+                  ),
+                  const SizedBox(width: 8),
+                  PopupMenuButton<_FileAction>(
+                    tooltip: 'Datei',
+                    icon: const Icon(Icons.menu),
+                    onSelected: (action) {
+                      switch (action) {
+                        case _FileAction.pickBackground:
+                          _pickBackground();
+                        case _FileAction.clearBackground:
+                          state.clearBackground();
+                        case _FileAction.exportConfig:
+                          _exportConfig();
+                        case _FileAction.importConfig:
+                          _importConfig();
+                        case _FileAction.sceneWidth:
+                          _showSceneWidthDialog();
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: _FileAction.pickBackground,
+                        child: ListTile(
+                          leading: Icon(Icons.image_outlined),
+                          title: Text('Hintergrundbild wählen'),
+                        ),
+                      ),
+                      if (state.background != null)
+                        const PopupMenuItem(
+                          value: _FileAction.clearBackground,
+                          child: ListTile(
+                            leading: Icon(Icons.hide_image_outlined),
+                            title: Text('Hintergrundbild entfernen'),
+                          ),
+                        ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: _FileAction.exportConfig,
+                        child: ListTile(
+                          leading: Icon(Icons.save_outlined),
+                          title: Text('Konfiguration als YAML speichern'),
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _FileAction.importConfig,
+                        child: ListTile(
+                          leading: Icon(Icons.file_open_outlined),
+                          title: Text('Konfiguration aus YAML laden'),
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: _FileAction.sceneWidth,
+                        child: ListTile(
+                          leading: Icon(Icons.straighten_outlined),
+                          title: Text('Maßstab (Bildbreite)'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 8),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(
+                        value: true,
+                        icon: Icon(Icons.edit_outlined, size: 18),
+                        label: Text('Bearbeiten'),
+                      ),
+                      ButtonSegment(
+                        value: false,
+                        icon: Icon(Icons.visibility_outlined, size: 18),
+                        label: Text('Vorschau'),
+                      ),
+                    ],
+                    selected: {state.editMode},
+                    onSelectionChanged: (v) {
+                      state.editMode = v.first;
+                      state.changed();
+                    },
+                    showSelectedIcon: false,
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: state.simulate
+                        ? 'Simulation anhalten'
+                        : 'Simulation starten',
+                    icon: Icon(state.simulate ? Icons.pause : Icons.play_arrow),
+                    onPressed: () {
+                      state.simulate = !state.simulate;
+                      state.changed();
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
+              endDrawer: wide
+                  ? null
+                  : Drawer(width: 340, child: SafeArea(child: panel)),
+              body: wide
+                  ? Row(
+                      children: [
+                        Expanded(child: canvas),
+                        const VerticalDivider(width: 1),
+                        SizedBox(width: 360, child: panel),
+                      ],
+                    )
+                  : canvas,
+              floatingActionButton: wide
+                  ? null
+                  : Builder(
+                      builder: (context) => FloatingActionButton(
+                        tooltip: 'Konfiguration',
+                        onPressed: () => Scaffold.of(context).openEndDrawer(),
+                        child: const Icon(Icons.tune),
                       ),
                     ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: _FileAction.exportConfig,
-                    child: ListTile(
-                      leading: Icon(Icons.save_outlined),
-                      title: Text('Konfiguration als YAML speichern'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: _FileAction.importConfig,
-                    child: ListTile(
-                      leading: Icon(Icons.file_open_outlined),
-                      title: Text('Konfiguration aus YAML laden'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 8),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(
-                      value: true,
-                      icon: Icon(Icons.edit_outlined, size: 18),
-                      label: Text('Bearbeiten')),
-                  ButtonSegment(
-                      value: false,
-                      icon: Icon(Icons.visibility_outlined, size: 18),
-                      label: Text('Vorschau')),
-                ],
-                selected: {state.editMode},
-                onSelectionChanged: (v) {
-                  state.editMode = v.first;
-                  state.changed();
-                },
-                showSelectedIcon: false,
-              ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: state.simulate ? 'Simulation anhalten' : 'Simulation starten',
-                icon: Icon(state.simulate ? Icons.pause : Icons.play_arrow),
-                onPressed: () {
-                  state.simulate = !state.simulate;
-                  state.changed();
-                },
-              ),
-              const SizedBox(width: 8),
-            ],
+            ),
           ),
-          endDrawer:
-              wide ? null : Drawer(width: 340, child: SafeArea(child: panel)),
-          body: wide
-              ? Row(
-                  children: [
-                    Expanded(child: canvas),
-                    const VerticalDivider(width: 1),
-                    SizedBox(width: 360, child: panel),
-                  ],
-                )
-              : canvas,
-          floatingActionButton: wide
-              ? null
-              : Builder(
-                  builder: (context) => FloatingActionButton(
-                    tooltip: 'Konfiguration',
-                    onPressed: () => Scaffold.of(context).openEndDrawer(),
-                    child: const Icon(Icons.tune),
-                  ),
-                ),
         );
       },
     );
