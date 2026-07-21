@@ -15,6 +15,8 @@ void main() {
   runApp(const LedatoApp());
 }
 
+enum _FileAction { pickBackground, clearBackground, exportConfig, importConfig }
+
 class LedatoApp extends StatelessWidget {
   const LedatoApp({super.key});
 
@@ -151,27 +153,53 @@ class _EditorScreenState extends State<EditorScreen>
           appBar: AppBar(
             title: const Text('Ledato Stripes'),
             actions: [
-              IconButton(
-                tooltip: 'Hintergrundbild wählen',
-                icon: const Icon(Icons.image_outlined),
-                onPressed: _pickBackground,
-              ),
-              if (state.background != null)
-                IconButton(
-                  tooltip: 'Hintergrundbild entfernen',
-                  icon: const Icon(Icons.hide_image_outlined),
-                  onPressed: state.clearBackground,
-                ),
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: 'Konfiguration als YAML speichern',
-                icon: const Icon(Icons.save_outlined),
-                onPressed: _exportConfig,
-              ),
-              IconButton(
-                tooltip: 'Konfiguration aus YAML laden',
-                icon: const Icon(Icons.file_open_outlined),
-                onPressed: _importConfig,
+              PopupMenuButton<_FileAction>(
+                tooltip: 'Datei',
+                icon: const Icon(Icons.menu),
+                onSelected: (action) {
+                  switch (action) {
+                    case _FileAction.pickBackground:
+                      _pickBackground();
+                    case _FileAction.clearBackground:
+                      state.clearBackground();
+                    case _FileAction.exportConfig:
+                      _exportConfig();
+                    case _FileAction.importConfig:
+                      _importConfig();
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: _FileAction.pickBackground,
+                    child: ListTile(
+                      leading: Icon(Icons.image_outlined),
+                      title: Text('Hintergrundbild wählen'),
+                    ),
+                  ),
+                  if (state.background != null)
+                    const PopupMenuItem(
+                      value: _FileAction.clearBackground,
+                      child: ListTile(
+                        leading: Icon(Icons.hide_image_outlined),
+                        title: Text('Hintergrundbild entfernen'),
+                      ),
+                    ),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(
+                    value: _FileAction.exportConfig,
+                    child: ListTile(
+                      leading: Icon(Icons.save_outlined),
+                      title: Text('Konfiguration als YAML speichern'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: _FileAction.importConfig,
+                    child: ListTile(
+                      leading: Icon(Icons.file_open_outlined),
+                      title: Text('Konfiguration aus YAML laden'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(width: 8),
               SegmentedButton<bool>(
