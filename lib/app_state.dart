@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'ddp_server.dart';
 import 'model.dart';
 import 'yaml_config.dart';
 
@@ -20,6 +21,72 @@ class AppState extends ChangeNotifier {
   bool simulate =
       true; // true = Simulation läuft, false = Editiermodus-Standbild
   bool editMode = true; // Handles/Linien anzeigen und bearbeiten
+  bool showLedGrid =
+      false; // Ausrichtungsraster (60 LEDs/m) im Bearbeiten-Modus
+
+  // ---------- DDP-Server ----------
+  //
+  // Ein UDP-Server (Standardport 4048) macht die 8 Stripes per DDP
+  // (Distributed Display Protocol, z. B. von xLights oder WLED genutzt)
+  // ansprechbar: die 1-Byte-Zieladresse eines Pakets (1..8) wählt den
+  // Stripe anhand seiner Position in [strips]. Solange für einen Stripe
+  // frische Pakete ankommen, überschreiben dessen Farben den internen
+  // Effekt (siehe [ddpColorFor]); die Übersteuerung ist reine Anzeigesache
+  // und läuft nicht über [changed()] (kein Undo-Schritt, keine Autospeicherung).
+
+  /// Wie lange zuletzt empfangene DDP-Farben eines Stripes gültig bleiben,
+  /// bevor ohne neue Pakete wieder der interne Effekt greift.
+  static const Duration ddpStaleTimeout = Duration(seconds: 2);
+
+  DdpServer? _ddpServer;
+  int ddpPort = kDdpDefaultPort;
+  final Map<String, _DdpOverride> _ddpOverrides = {};
+
+  bool get ddpServerRunning => _ddpServer?.isRunning ?? false;
+
+  Future<void> startDdpServer([int? port]) async {
+    if (kIsWeb) return;
+    _ddpServer ??= DdpServer(onFrame: _onDdpFrame);
+    ddpPort = port ?? ddpPort;
+    await _ddpServer!.start(port: ddpPort);
+    notifyListeners();
+  }
+
+  Future<void> stopDdpServer() async {
+    await _ddpServer?.stop();
+    notifyListeners();
+  }
+
+  void _onDdpFrame(int destination, int pixelStart, List<Color> colors) {
+    if (destination < 1 || destination > strips.length) return;
+    final strip = strips[destination - 1];
+    final ov = _ddpOverrides.putIfAbsent(
+      strip.id,
+      () => _DdpOverride(strip.ledCount),
+    );
+    if (ov.colors.length != strip.ledCount) {
+      ov.colors = List<Color?>.filled(strip.ledCount, null);
+    }
+    for (var i = 0; i < colors.length; i++) {
+      final idx = pixelStart + i;
+      if (idx >= 0 && idx < ov.colors.length) ov.colors[idx] = colors[i];
+    }
+    ov.lastUpdate = DateTime.now();
+    notifyListeners();
+  }
+
+  /// Per DDP empfangene Farbe für die LED [globalIndex] (fortlaufend über
+  /// alle Abschnitte des Stripes) des Stripes [stripId], oder `null` falls
+  /// keine (noch gültige) Übersteuerung vorliegt.
+  Color? ddpColorFor(String stripId, int globalIndex) {
+    final ov = _ddpOverrides[stripId];
+    if (ov == null) return null;
+    if (DateTime.now().difference(ov.lastUpdate) > ddpStaleTimeout) {
+      return null;
+    }
+    if (globalIndex < 0 || globalIndex >= ov.colors.length) return null;
+    return ov.colors[globalIndex];
+  }
 
   ui.Image? background;
   String? backgroundPath;
@@ -126,26 +193,36 @@ class AppState extends ChangeNotifier {
     return strip;
   }
 
-  /// Fügt dem Stripe einen weiteren, unabhängig platzierbaren Abschnitt
-  /// hinzu (z. B. für eine Lücke hinter einem Möbelstück oder eine zweite
-  /// Wand ohne direkten Sichtbezug) — LEDs zählen nahtlos über die
-  /// Abschnittsgrenze hinweg weiter, als wäre es ein durchgehendes Stück.
-  /// Startet als gerade Fortsetzung am Ende des letzten Abschnitts. Die
-  /// LED-Anzahl des neuen Abschnitts wird vom verbleibenden Budget des
-  /// Stripes (max. [kMaxLedsPerStrip] insgesamt) abgezweigt.
+  /// Fügt direkt nach dem gerade ausgewählten Abschnitt einen weiteren,
+  /// unabhängig platzierbaren Abschnitt mit dessen Eigenschaften ein (Optik,
+  /// LED-Anzahl, Winkel) — LEDs zählen nahtlos über die Abschnittsgrenze
+  /// hinweg weiter, als wäre es ein durchgehendes Stück. Startet als gerade
+  /// Fortsetzung am Ende des ausgewählten Abschnitts; die LED-Anzahl wird bei
+  /// Bedarf auf das verbleibende Budget des Stripes (max. [kMaxLedsPerStrip]
+  /// insgesamt) gekappt.
   void addSection(LedStrip s) {
     final remaining = kMaxLedsPerStrip - s.ledCount;
     if (remaining <= 0) return;
-    final last = s.sections.isNotEmpty ? s.sections.last : null;
-    final start = last != null ? sectionEnd(s, last) : const Offset(0.1, 0.5);
-    final section = StripSection(
-      start: Offset(start.dx.clamp(0.02, 0.98), start.dy.clamp(0.02, 0.98)),
-      angle: last?.angle ?? 0.0,
-      ledCount: (remaining < 60 ? remaining : 60),
-      color: last?.color ?? _defaultColors.first,
-    );
-    s.sections.add(section);
-    selectedSectionIndex = s.sections.length - 1;
+    if (s.sections.isEmpty) {
+      s.sections.add(
+        StripSection(
+          start: const Offset(0.1, 0.5),
+          ledCount: remaining < 60 ? remaining : 60,
+          color: _defaultColors.first,
+        ),
+      );
+      selectedSectionIndex = 0;
+      changed();
+      return;
+    }
+    final baseIdx = selectedSectionIndex.clamp(0, s.sections.length - 1);
+    final base = s.sections[baseIdx];
+    final start = sectionEnd(s, base);
+    final section = base.clone()
+      ..start = Offset(start.dx.clamp(0.02, 0.98), start.dy.clamp(0.02, 0.98))
+      ..ledCount = math.min(base.ledCount, remaining);
+    s.sections.insert(baseIdx + 1, section);
+    selectedSectionIndex = baseIdx + 1;
     changed();
   }
 
@@ -341,6 +418,7 @@ class AppState extends ChangeNotifier {
   void dispose() {
     _saveTimer?.cancel();
     _undoCoalesceTimer?.cancel();
+    _ddpServer?.stop();
     super.dispose();
   }
 
@@ -354,6 +432,18 @@ class AppState extends ChangeNotifier {
     Color(0xFFFF4020),
     Color(0xFF00FFB0),
   ];
+}
+
+/// Per DDP empfangene Farben eines Stripes (ein Eintrag je LED, `null` wo
+/// noch keine Daten angekommen sind) plus Zeitpunkt des letzten Pakets, um
+/// die Übersteuerung nach [AppState.ddpStaleTimeout] verfallen zu lassen.
+class _DdpOverride {
+  _DdpOverride(int ledCount)
+    : colors = List<Color?>.filled(ledCount, null),
+      lastUpdate = DateTime.now();
+
+  List<Color?> colors;
+  DateTime lastUpdate;
 }
 
 /// Schnappschuss des editierbaren Zustands für Undo/Redo. Das Hintergrundbild

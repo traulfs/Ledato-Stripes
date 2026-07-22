@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 import 'app_state.dart';
 import 'editor_canvas.dart';
 import 'labeled_slider.dart';
+import 'model.dart';
 import 'strip_panel.dart';
 
 void main() {
@@ -23,6 +24,7 @@ enum _FileAction {
   exportConfig,
   importConfig,
   sceneWidth,
+  ddpServer,
 }
 
 class LedatoApp extends StatelessWidget {
@@ -152,6 +154,93 @@ class _EditorScreenState extends State<EditorScreen>
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _showDdpDialog() async {
+    var ips = <String>[];
+    try {
+      if (!kIsWeb) {
+        final interfaces = await NetworkInterface.list(
+          includeLoopback: false,
+          type: InternetAddressType.IPv4,
+        );
+        ips = [
+          for (final i in interfaces)
+            for (final a in i.addresses) a.address,
+        ];
+      }
+    } catch (_) {
+      // Netzwerkschnittstellen nicht ermittelbar (z. B. fehlende
+      // Berechtigung) — Anzeige der IPs ist nur eine Komfort-Info.
+    }
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => ListenableBuilder(
+        listenable: state,
+        builder: (context, _) => AlertDialog(
+          title: const Text('DDP-Server'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  state.ddpServerRunning
+                      ? 'Läuft auf Port ${state.ddpPort}'
+                      : 'Gestoppt',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                if (state.ddpServerRunning && ips.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text('Erreichbar unter: ${ips.join(', ')}'),
+                ],
+                const SizedBox(height: 12),
+                TextFormField(
+                  key: ValueKey('ddp-port-${state.ddpPort}'),
+                  initialValue: '${state.ddpPort}',
+                  enabled: !state.ddpServerRunning,
+                  decoration: const InputDecoration(
+                    labelText: 'Port',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) {
+                    final p = int.tryParse(v);
+                    if (p != null && p > 0 && p < 65536) state.ddpPort = p;
+                  },
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Ziel-ID 1–8 im DDP-Paket entspricht Stripe 1–8 in der '
+                  'Reihenfolge der Konfiguration. Solange für einen Stripe '
+                  'Pakete ankommen, ersetzen sie dessen Effekt live.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                if (state.ddpServerRunning) {
+                  await state.stopDdpServer();
+                } else {
+                  await state.startDdpServer(state.ddpPort);
+                }
+              },
+              child: Text(state.ddpServerRunning ? 'Stoppen' : 'Starten'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Fertig'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _showSceneWidthDialog() async {
     await showDialog(
       context: context,
@@ -253,6 +342,8 @@ class _EditorScreenState extends State<EditorScreen>
                           _importConfig();
                         case _FileAction.sceneWidth:
                           _showSceneWidthDialog();
+                        case _FileAction.ddpServer:
+                          _showDdpDialog();
                       }
                     },
                     itemBuilder: (context) => [
@@ -294,7 +385,39 @@ class _EditorScreenState extends State<EditorScreen>
                           title: Text('Maßstab (Bildbreite)'),
                         ),
                       ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: _FileAction.ddpServer,
+                        child: ListTile(
+                          leading: Icon(
+                            state.ddpServerRunning
+                                ? Icons.wifi_tethering
+                                : Icons.wifi_tethering_off,
+                          ),
+                          title: const Text('DDP-Server'),
+                          subtitle: Text(
+                            state.ddpServerRunning
+                                ? 'Aktiv · Port ${state.ddpPort}'
+                                : 'Gestoppt',
+                          ),
+                        ),
+                      ),
                     ],
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: state.showLedGrid
+                        ? 'Raster ausblenden'
+                        : 'Raster anzeigen ($kGridLedsPerMeter LEDs/m)',
+                    icon: Icon(
+                      state.showLedGrid ? Icons.grid_on : Icons.grid_off,
+                    ),
+                    onPressed: !state.editMode
+                        ? null
+                        : () {
+                            state.showLedGrid = !state.showLedGrid;
+                            state.changed();
+                          },
                   ),
                   const SizedBox(width: 8),
                   SegmentedButton<bool>(

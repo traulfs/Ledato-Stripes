@@ -232,9 +232,13 @@ class _StripPanelState extends State<StripPanel> {
           ),
         ),
         IconButton(
-          tooltip: 'Bearbeiten',
-          icon: const Icon(Icons.edit_outlined),
-          onPressed: () => _editSectionDialog(context, s, selIdx),
+          tooltip: s.sections.length <= 1
+              ? 'Mindestens ein Abschnitt erforderlich'
+              : 'Abschnitt löschen',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: s.sections.length <= 1
+              ? null
+              : () => state.removeSection(s, selIdx),
         ),
         IconButton(
           tooltip: s.ledCount >= kMaxLedsPerStrip
@@ -246,54 +250,6 @@ class _StripPanelState extends State<StripPanel> {
               : () => state.addSection(s),
         ),
       ],
-    );
-  }
-
-  Future<void> _editSectionDialog(
-    BuildContext context,
-    LedStrip s,
-    int idx,
-  ) async {
-    await showDialog(
-      context: context,
-      builder: (dialogContext) => ListenableBuilder(
-        listenable: state,
-        builder: (context, _) {
-          if (idx >= s.sections.length) {
-            SchedulerBinding.instance.addPostFrameCallback((_) {
-              if (Navigator.canPop(dialogContext)) {
-                Navigator.pop(dialogContext);
-              }
-            });
-            return const SizedBox.shrink();
-          }
-          final sec = s.sections[idx];
-          return AlertDialog(
-            title: Text('Abschnitt ${idx + 1} bearbeiten'),
-            content: Text(
-              '${sec.ledCount} LEDs · '
-              '${fmtMeters(state.sectionTargetLengthMeters(s, sec))} · '
-              '${sec.effect.label}',
-            ),
-            actions: [
-              TextButton(
-                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                onPressed: s.sections.length <= 1
-                    ? null
-                    : () {
-                        state.removeSection(s, idx);
-                        Navigator.pop(dialogContext);
-                      },
-                child: const Text('Löschen'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Fertig'),
-              ),
-            ],
-          );
-        },
-      ),
     );
   }
 
@@ -325,11 +281,12 @@ class _StripPanelState extends State<StripPanel> {
           value: _angleDegrees(selSec.angle),
           min: 0,
           max: 360,
+          divisions: 360,
           display: '${_angleDegrees(selSec.angle).round()}°',
           numberEntry: true,
           unitSuffix: '°',
           onChanged: (v) {
-            selSec.angle = v * (math.pi / 180);
+            selSec.angle = snapAngleToWholeDegrees(v * (math.pi / 180));
             state.changed();
           },
         ),

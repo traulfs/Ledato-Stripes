@@ -8,6 +8,16 @@ const int kMaxLedsPerStrip = 300;
 /// Verfügbare LED-Dichten (Pixel pro Meter), z. B. WS2815-Varianten.
 const List<int> kLedDensities = [30, 60, 144];
 
+/// LED-Dichte des Ausrichtungsrasters im Bearbeiten-Modus — fest bei 60
+/// LEDs/m, unabhängig von der Dichte des gerade gewählten Stripes.
+const int kGridLedsPerMeter = 60;
+
+/// Rundet einen Winkel (Radiant) auf die nächste ganze Gradzahl — der Winkel
+/// eines Abschnitts ist immer nur in vollen Grad einstellbar, egal ob per
+/// Schieberegler, Zahleneingabe oder Ziehen am Drehgriff auf der Leinwand.
+double snapAngleToWholeDegrees(double radians) =>
+    (radians * 180 / math.pi).roundToDouble() * (math.pi / 180);
+
 enum EffectType {
   solid('Statische Farbe'),
   gradient('Farbverlauf'),

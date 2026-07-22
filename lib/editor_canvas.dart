@@ -169,7 +169,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
         final dx = world.dx - startC.dx;
         final dy = world.dy - startC.dy;
         if (dx != 0 || dy != 0) {
-          sec.angle = math.atan2(dy, dx);
+          sec.angle = snapAngleToWholeDegrees(math.atan2(dy, dx));
         }
       } else {
         // Ganzen Abschnitt verschieben — andere Abschnitte bleiben an Ort
@@ -380,6 +380,10 @@ class _StripPainter extends CustomPainter {
       _paintGrid(canvas, visible);
     }
 
+    if (state.editMode && state.showLedGrid) {
+      _paintLedPitchGrid(canvas, visible);
+    }
+
     final t = time.value;
     for (final s in state.strips) {
       final leds = _placedLeds(s);
@@ -392,10 +396,13 @@ class _StripPainter extends CustomPainter {
         ..maskFilter = MaskFilter.blur(BlurStyle.normal, glowR * 0.6);
       final corePaint = Paint()..blendMode = BlendMode.plus;
 
-      for (final (pos, sec, localIndex) in leds) {
-        final c = state.simulate
-            ? ledColor(s, sec, sec.ledCount, localIndex, t)
-            : ledColor(s, sec, sec.ledCount, localIndex, 0);
+      for (var globalIndex = 0; globalIndex < leds.length; globalIndex++) {
+        final (pos, sec, localIndex) = leds[globalIndex];
+        final c =
+            state.ddpColorFor(s.id, globalIndex) ??
+            (state.simulate
+                ? ledColor(s, sec, sec.ledCount, localIndex, t)
+                : ledColor(s, sec, sec.ledCount, localIndex, 0));
         if (c.a == 0) continue;
         final lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
         if (state.glow > 0 && lum > 0.02) {
@@ -528,6 +535,34 @@ class _StripPainter extends CustomPainter {
       final segEnd = math.min(dist + dashLen, total);
       canvas.drawLine(a + dir * dist, a + dir * segEnd, paint);
       dist = segEnd + gapLen;
+    }
+  }
+
+  /// Ausrichtungsraster: Linien im exakten Abstand der LED-Teilung bei
+  /// [kGridLedsPerMeter] LEDs/m, als Platzierungshilfe unabhängig von der
+  /// Dichte des gerade gewählten Stripes. Meter- und Bildpixel-Raum sind
+  /// gleichförmig verbunden (siehe [AppState.sectionEnd]), daher ist der
+  /// Pixelabstand pro Meter in x und y identisch.
+  void _paintLedPitchGrid(Canvas canvas, Rect visible) {
+    final pxPerMeter = contentRect.width / state.sceneWidthMeters;
+    if (pxPerMeter <= 0) return;
+    final step = pxPerMeter / kGridLedsPerMeter;
+    if (step * zoom < 3) return; // zu fein, um sinnvoll dargestellt zu werden
+    final area = contentRect.intersect(visible);
+    if (area.isEmpty) return;
+    final p = Paint()
+      ..color = const Color(0x33FFFFFF)
+      ..strokeWidth = 1 / zoom;
+    var x =
+        contentRect.left +
+        ((area.left - contentRect.left) / step).floor() * step;
+    for (; x <= area.right; x += step) {
+      canvas.drawLine(Offset(x, area.top), Offset(x, area.bottom), p);
+    }
+    var y =
+        contentRect.top + ((area.top - contentRect.top) / step).floor() * step;
+    for (; y <= area.bottom; y += step) {
+      canvas.drawLine(Offset(area.left, y), Offset(area.right, y), p);
     }
   }
 
