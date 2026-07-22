@@ -97,8 +97,21 @@ class AppState extends ChangeNotifier {
   /// Metrischer Maßstab: reale Breite des Bildbereichs in Metern.
   double sceneWidthMeters = 5.0;
 
-  /// Seitenverhältnis (Höhe/Breite) des Bildbereichs; wird von der Leinwand
-  /// beim Layout gesetzt und für die Winkel-Umrechnung benötigt.
+  /// Seitenverhältnis (Höhe/Breite) des Bildbereichs *ohne* Hintergrundbild.
+  /// Mit Bild ergibt sich das Seitenverhältnis stattdessen aus dessen realen
+  /// Pixelmaßen (geräteunabhängig). Ohne Bild wäre der Bildbereich sonst
+  /// genauso groß wie das Leinwand-Widget — und damit von Fenster- bzw.
+  /// Bildschirmform des jeweiligen Geräts abhängig: dieselbe Konfiguration
+  /// sähe auf einem breiten Mac-Fenster und einem hochkantigen Handy-Display
+  /// völlig unterschiedlich aus (Winkel und Abstände werden relativ zu
+  /// diesem Seitenverhältnis interpretiert). Deshalb wird dieser Wert
+  /// gespeichert und genutzt, statt ihn live aus der Fenstergröße abzuleiten.
+  double sceneAspect = 0.6;
+
+  /// Tatsächlich für die Winkel-/Längen-Umrechnung verwendetes
+  /// Seitenverhältnis (Höhe/Breite) — wird von der Leinwand beim Layout
+  /// gesetzt: mit Hintergrundbild aus dessen realen Pixelmaßen, sonst aus
+  /// [sceneAspect].
   double contentAspect = 1.0;
 
   /// Physischer Abstand zwischen erster und letzter LED eines Abschnitts:
@@ -456,6 +469,7 @@ class _Snapshot {
       selectedId = s.selectedId,
       selectedSectionIndex = s.selectedSectionIndex,
       sceneWidthMeters = s.sceneWidthMeters,
+      sceneAspect = s.sceneAspect,
       backgroundDim = s.backgroundDim,
       ledSize = s.ledSize,
       glow = s.glow;
@@ -464,6 +478,7 @@ class _Snapshot {
   final String? selectedId;
   final int selectedSectionIndex;
   final double sceneWidthMeters;
+  final double sceneAspect;
   final double backgroundDim;
   final double ledSize;
   final double glow;
@@ -475,6 +490,7 @@ class _Snapshot {
     s.selectedId = s.strips.any((e) => e.id == selectedId) ? selectedId : null;
     s.selectedSectionIndex = selectedSectionIndex;
     s.sceneWidthMeters = sceneWidthMeters;
+    s.sceneAspect = sceneAspect;
     s.backgroundDim = backgroundDim;
     s.ledSize = ledSize;
     s.glow = glow;

@@ -44,15 +44,20 @@ class _EditorCanvasState extends State<EditorCanvas> {
 
   AppState get st => widget.state;
 
-  /// Rechteck, in das das Hintergrundbild eingepasst wird (contain).
+  /// Rechteck, in das das Hintergrundbild eingepasst wird (contain). Ohne
+  /// Bild wird stattdessen [AppState.sceneAspect] als virtuelles
+  /// Seitenverhältnis eingepasst — sonst wäre der Bildbereich genauso groß
+  /// wie das Leinwand-Widget und damit von Fenster-/Bildschirmform des
+  /// jeweiligen Geräts abhängig: dieselbe Konfiguration sähe je nach Gerät
+  /// (breites Fenster vs. hochkantiges Handy-Display) völlig verzerrt aus,
+  /// da Winkel und Abstände relativ zu diesem Seitenverhältnis interpretiert
+  /// werden (siehe [AppState.sectionEnd]).
   Rect _computeContentRect(Size size) {
     final img = st.background;
-    if (img == null) return Offset.zero & size;
-    final fitted = applyBoxFit(
-      BoxFit.contain,
-      Size(img.width.toDouble(), img.height.toDouble()),
-      size,
-    ).destination;
+    final refSize = img != null
+        ? Size(img.width.toDouble(), img.height.toDouble())
+        : Size(1, st.sceneAspect);
+    final fitted = applyBoxFit(BoxFit.contain, refSize, size).destination;
     return Alignment.center.inscribe(fitted, Offset.zero & size);
   }
 
@@ -566,19 +571,34 @@ class _StripPainter extends CustomPainter {
     }
   }
 
+  /// Platzhalter-Raster ohne Hintergrundbild, auf [contentRect] begrenzt
+  /// (den durch [AppState.sceneAspect] festgelegten Szenenbereich), damit
+  /// dessen Grenzen sichtbar bleiben statt das ganze Fenster zu füllen.
   void _paintGrid(Canvas canvas, Rect visible) {
+    final area = contentRect.intersect(visible);
+    if (area.isEmpty) return;
     final p = Paint()
       ..color = const Color(0x14FFFFFF)
       ..strokeWidth = 1 / zoom;
     const step = 40.0;
-    final x0 = (visible.left / step).floor() * step;
-    final y0 = (visible.top / step).floor() * step;
-    for (var x = x0; x < visible.right; x += step) {
-      canvas.drawLine(Offset(x, visible.top), Offset(x, visible.bottom), p);
+    final x0 =
+        contentRect.left +
+        ((area.left - contentRect.left) / step).floor() * step;
+    final y0 =
+        contentRect.top + ((area.top - contentRect.top) / step).floor() * step;
+    for (var x = x0; x < area.right; x += step) {
+      canvas.drawLine(Offset(x, area.top), Offset(x, area.bottom), p);
     }
-    for (var y = y0; y < visible.bottom; y += step) {
-      canvas.drawLine(Offset(visible.left, y), Offset(visible.right, y), p);
+    for (var y = y0; y < area.bottom; y += step) {
+      canvas.drawLine(Offset(area.left, y), Offset(area.right, y), p);
     }
+    canvas.drawRect(
+      contentRect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1 / zoom
+        ..color = const Color(0x33FFFFFF),
+    );
   }
 
   @override

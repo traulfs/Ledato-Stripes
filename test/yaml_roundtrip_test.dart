@@ -10,6 +10,7 @@ void main() {
   test('YAML-Konfiguration: Export und Import ergeben denselben Zustand', () {
     final st = AppState();
     st.sceneWidthMeters = 4.5;
+    st.sceneAspect = 0.8;
     st.strips.add(
       LedStrip(
         id: 'abc',
@@ -34,6 +35,7 @@ void main() {
 
     expect(bgPath, isNull);
     expect(st2.sceneWidthMeters, closeTo(st.sceneWidthMeters, 1e-6));
+    expect(st2.sceneAspect, closeTo(st.sceneAspect, 1e-6));
     expect(s2.name, s1.name);
     expect(
       s2.sections.first.color.toARGB32(),

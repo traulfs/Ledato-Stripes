@@ -270,6 +270,28 @@ class _EditorScreenState extends State<EditorScreen>
                   'Stripe-Längen und LED-Anzahl berechnet.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (state.background == null) ...[
+                  const SizedBox(height: 12),
+                  LabeledSlider(
+                    label: 'Format',
+                    value: state.sceneAspect,
+                    min: 0.2,
+                    max: 2.0,
+                    display: '${(state.sceneAspect * 100).round()} %',
+                    onChanged: (v) {
+                      state.sceneAspect = v;
+                      state.changed();
+                    },
+                  ),
+                  Text(
+                    'Seitenverhältnis (Höhe ÷ Breite) ohne Hintergrundbild — '
+                    'wird gespeichert, damit dieselbe Konfiguration auf '
+                    'jedem Gerät gleich aussieht, statt sich nach Fenster- '
+                    'oder Bildschirmform zu richten. Mit Hintergrundbild '
+                    'gilt stattdessen dessen reales Format.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ],
             ),
           ),
