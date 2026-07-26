@@ -13,13 +13,14 @@ Formel wie AppState.sectionEnd in der App), statt eine einheitliche
 Reihenfolge für alle Sektionen anzunehmen.
 
 Anzeige:
-    Stripe 1: Pro Sektion die physisch inneren LEDs = Stunde (blau) der
-              Sektion, die der aktuellen Stunde (0..11) entspricht; die
-              physisch äußeren LEDs = Minute (rot) der Sektion, die der
-              nächstliegenden 5-Minuten-Marke entspricht. Als Kontur der
-              Uhrenform leuchten die äußersten LEDs der übrigen Sektionen
-              (alle bis auf die an die Stunden-Gruppe angrenzende) leicht
-              grün.
+    Stripe 1: Die physisch inneren LEDs (eine mehr als die äußeren) einer
+              Sektion = Stunde (blau), wenn diese Sektion der aktuellen
+              Stunde (0..11) entspricht. Die Sektion der nächstliegenden
+              5-Minuten-Marke leuchtet komplett rot (Minute). Fallen
+              Stunden- und Minuten-Sektion zusammen, teilen sich beide
+              die Sektion zu gleichen Teilen (halb blau, halb rot). Als
+              Kontur der Uhrenform leuchten die äußeren LEDs aller
+              übrigen Sektionen leicht grün.
     Stripe 2: Minute (rot) und Sekunde (gelb) je als einzelne LED-Position
               (1:1 auf 0..59). Bei Überlagerung gewinnt die Sekunde. Alle
               übrigen LEDs des Rings leuchten leicht grün (Kontur der
@@ -53,7 +54,7 @@ OFF: Pixel = (0, 0, 0)
 RED: Pixel = (255, 0, 0)
 YELLOW: Pixel = (255, 255, 0)
 BLUE: Pixel = (0, 0, 255)
-FAINT_GREEN: Pixel = (0, 25, 0)  # Kontur der Uhrenform, wo keine Zeit angezeigt wird
+FAINT_GREEN: Pixel = (0, 50, 0)  # Kontur der Uhrenform, wo keine Zeit angezeigt wird
 
 STRIPE1_DEST = 1  # Sektionen: Stunde (innen) + Minutenmarke (außen)
 STRIPE2_DEST = 2  # durchgehender Ring: Sekunde + Minute + Stunde als Zeiger
@@ -135,16 +136,26 @@ def stripe1_frame(
     minute_mark = round(minute / 5) % sections
     pixels: List[Pixel] = []
     for i, (n, inner_first) in enumerate(section_specs):
-        inner_n = n // 2
-        outer_n = n - inner_n
-        hour_block = [BLUE if i == hour12 else OFF] * inner_n
-        if i == minute_mark:
+        is_hour = i == hour12
+        is_minute = i == minute_mark
+        if is_hour and is_minute:
+            # Konkurrenz um dieselbe Sektion: beide bekommen gleich viele LEDs.
+            inner_n = n // 2
+            outer_n = n - inner_n
+            hour_block = [BLUE] * inner_n
+            minute_block = [RED] * outer_n
+        elif is_minute:
+            # Minute allein leuchtet über die ganze Sektion.
+            inner_n = min(n // 2 + 1, n)
+            outer_n = n - inner_n
+            hour_block = [RED] * inner_n
             minute_block = [RED] * outer_n
         else:
-            # Kontur: die äußersten (outer_n - 1) LEDs leicht grün, die an die
-            # Stunden-Gruppe angrenzende LED bleibt aus.
-            fill = [FAINT_GREEN] * max(outer_n - 1, 0)
-            minute_block = ([OFF] + fill) if inner_first else (fill + [OFF])
+            # Stunde eine LED länger als Minute, sonst Kontur (leicht grün).
+            inner_n = min(n // 2 + 1, n)
+            outer_n = n - inner_n
+            hour_block = [BLUE if is_hour else OFF] * inner_n
+            minute_block = [FAINT_GREEN] * outer_n
         if inner_first:
             pixels.extend(hour_block)
             pixels.extend(minute_block)
