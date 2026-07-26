@@ -1,0 +1,67 @@
+# Ledato Stripes Konfiguration
+sceneWidthMeters: 5.7349
+backgroundPath: null
+backgroundDim: 0.5025
+ledSize: 3.1151
+glow: 0.0
+strips:
+  - id: "1784642015614791"
+    name: "Stripe 2"
+    enabled: true
+    ledsPerMeter: 144
+    sections:
+      - start: [0.1, 0.25]
+        angleDegrees: 0.0
+        ledCount: 60
+        effect: solid
+        color: "#FF00C8FF"
+        color2: "#FF0040FF"
+        brightness: 1.0
+        speed: 0.5
+        reversed: false
+  - id: "1784642770708778"
+    name: "Stripe 3"
+    enabled: true
+    ledsPerMeter: 60
+    sections:
+      - start: [0.1, 0.35]
+        angleDegrees: 0.0
+        ledCount: 46
+        effect: rainbow
+        color: "#FFAE6969"
+        color2: "#FF0040FF"
+        brightness: 1.0
+        speed: 0.5
+        reversed: false
+      - start: [0.2788, 0.4108]
+        angleDegrees: 90.0
+        ledCount: 68
+        effect: rainbow
+        color: "#FFAE6969"
+        color2: "#FF0040FF"
+        brightness: 1.0
+        speed: 0.8324
+        reversed: false
+      - start: [0.4724, 0.4544]
+        angleDegrees: 0.0
+        ledCount: 60
+        effect: colorWipe
+        color: "#FFFFD000"
+        color2: "#FF00FF00"
+        brightness: 1.0
+        speed: 0.5
+        reversed: false
+  - id: "1784648554107317"
+    name: "Stripe 4"
+    enabled: true
+    ledsPerMeter: 60
+    sections:
+      - start: [0.2732, 0.2836]
+        angleDegrees: -23.1617
+        ledCount: 60
+        effect: colorWipe
+        color: "#FF40FF40"
+        color2: "#FF0040FF"
+        brightness: 1.0
+        speed: 0.5
+        reversed: false
