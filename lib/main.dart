@@ -257,9 +257,13 @@ class _EditorScreenState extends State<EditorScreen>
                 LabeledSlider(
                   label: 'Bildbreite',
                   value: state.sceneWidthMeters,
-                  min: 0.5,
+                  min: 0.1,
                   max: 30,
                   display: fmtMeters(state.sceneWidthMeters),
+                  numberEntry: true,
+                  decimals: 2,
+                  unitSuffix: 'm',
+                  fieldWidth: 76,
                   onChanged: (v) {
                     state.sceneWidthMeters = v;
                     state.changed();
@@ -270,7 +274,20 @@ class _EditorScreenState extends State<EditorScreen>
                   'Stripe-Längen und LED-Anzahl berechnet.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
-                if (state.background == null) ...[
+                if (state.background != null) ...[
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Seitenverhältnis vom Bild übernehmen'),
+                    value: state.useImageAspect,
+                    onChanged: (v) {
+                      state.useImageAspect = v;
+                      state.changed();
+                    },
+                  ),
+                ],
+                if (state.background == null || !state.useImageAspect) ...[
                   const SizedBox(height: 12),
                   LabeledSlider(
                     label: 'Format',
@@ -278,17 +295,20 @@ class _EditorScreenState extends State<EditorScreen>
                     min: 0.2,
                     max: 2.0,
                     display: '${(state.sceneAspect * 100).round()} %',
+                    numberEntry: true,
+                    displayScale: 100,
+                    unitSuffix: '%',
                     onChanged: (v) {
                       state.sceneAspect = v;
                       state.changed();
                     },
                   ),
                   Text(
-                    'Seitenverhältnis (Höhe ÷ Breite) ohne Hintergrundbild — '
-                    'wird gespeichert, damit dieselbe Konfiguration auf '
-                    'jedem Gerät gleich aussieht, statt sich nach Fenster- '
-                    'oder Bildschirmform zu richten. Mit Hintergrundbild '
-                    'gilt stattdessen dessen reales Format.',
+                    'Seitenverhältnis (Höhe ÷ Breite) des Bildbereichs — wird '
+                    'gespeichert, damit dieselbe Konfiguration auf jedem '
+                    'Gerät gleich aussieht, statt sich nach Fenster- oder '
+                    'Bildschirmform zu richten. Mit Hintergrundbild wird '
+                    'dieses auf das gewählte Format gestreckt.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -312,6 +332,7 @@ class _EditorScreenState extends State<EditorScreen>
       listenable: state,
       builder: (context, _) {
         final wide = MediaQuery.sizeOf(context).width > 900;
+        final compact = MediaQuery.sizeOf(context).width < 600;
         final canvas = EditorCanvas(state: state, time: time);
         final panel = StripPanel(state: state);
 
@@ -348,7 +369,7 @@ class _EditorScreenState extends State<EditorScreen>
                     icon: const Icon(Icons.redo),
                     onPressed: state.canRedo ? state.redo : null,
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: compact ? 2 : 8),
                   PopupMenuButton<_FileAction>(
                     tooltip: 'Datei',
                     icon: const Icon(Icons.menu),
@@ -426,7 +447,7 @@ class _EditorScreenState extends State<EditorScreen>
                       ),
                     ],
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: compact ? 2 : 8),
                   IconButton(
                     tooltip: state.showLedGrid
                         ? 'Raster ausblenden'
@@ -441,18 +462,18 @@ class _EditorScreenState extends State<EditorScreen>
                             state.changed();
                           },
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: compact ? 2 : 8),
                   SegmentedButton<bool>(
-                    segments: const [
+                    segments: [
                       ButtonSegment(
                         value: true,
-                        icon: Icon(Icons.edit_outlined, size: 18),
-                        label: Text('Bearbeiten'),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: compact ? null : const Text('Bearbeiten'),
                       ),
                       ButtonSegment(
                         value: false,
-                        icon: Icon(Icons.visibility_outlined, size: 18),
-                        label: Text('Vorschau'),
+                        icon: const Icon(Icons.visibility_outlined, size: 18),
+                        label: compact ? null : const Text('Vorschau'),
                       ),
                     ],
                     selected: {state.editMode},
@@ -462,7 +483,7 @@ class _EditorScreenState extends State<EditorScreen>
                     },
                     showSelectedIcon: false,
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: compact ? 2 : 8),
                   IconButton(
                     tooltip: state.simulate
                         ? 'Simulation anhalten'
@@ -473,7 +494,7 @@ class _EditorScreenState extends State<EditorScreen>
                       state.changed();
                     },
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: compact ? 2 : 8),
                 ],
               ),
               endDrawer: wide

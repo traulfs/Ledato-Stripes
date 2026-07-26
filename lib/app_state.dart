@@ -91,22 +91,27 @@ class AppState extends ChangeNotifier {
   ui.Image? background;
   String? backgroundPath;
   double backgroundDim = 0.5; // Abdunklung des Hintergrunds 0..1
-  double ledSize = 6; // Basisgröße einer LED in Pixel
   double glow = 1.0; // Stärke des Leuchtscheins 0..2
 
   /// Metrischer Maßstab: reale Breite des Bildbereichs in Metern.
   double sceneWidthMeters = 5.0;
 
-  /// Seitenverhältnis (Höhe/Breite) des Bildbereichs *ohne* Hintergrundbild.
-  /// Mit Bild ergibt sich das Seitenverhältnis stattdessen aus dessen realen
-  /// Pixelmaßen (geräteunabhängig). Ohne Bild wäre der Bildbereich sonst
-  /// genauso groß wie das Leinwand-Widget — und damit von Fenster- bzw.
-  /// Bildschirmform des jeweiligen Geräts abhängig: dieselbe Konfiguration
-  /// sähe auf einem breiten Mac-Fenster und einem hochkantigen Handy-Display
-  /// völlig unterschiedlich aus (Winkel und Abstände werden relativ zu
-  /// diesem Seitenverhältnis interpretiert). Deshalb wird dieser Wert
-  /// gespeichert und genutzt, statt ihn live aus der Fenstergröße abzuleiten.
+  /// Seitenverhältnis (Höhe/Breite) des Bildbereichs, wenn es nicht aus dem
+  /// Hintergrundbild übernommen wird (siehe [useImageAspect]). Ohne Bild wäre
+  /// der Bildbereich sonst genauso groß wie das Leinwand-Widget — und damit
+  /// von Fenster- bzw. Bildschirmform des jeweiligen Geräts abhängig:
+  /// dieselbe Konfiguration sähe auf einem breiten Mac-Fenster und einem
+  /// hochkantigen Handy-Display völlig unterschiedlich aus (Winkel und
+  /// Abstände werden relativ zu diesem Seitenverhältnis interpretiert).
+  /// Deshalb wird dieser Wert gespeichert und genutzt, statt ihn live aus der
+  /// Fenstergröße abzuleiten.
   double sceneAspect = 0.6;
+
+  /// Mit Hintergrundbild: ob das Seitenverhältnis aus dessen realen
+  /// Pixelmaßen übernommen wird (true, Standard) oder stattdessen frei über
+  /// [sceneAspect] eingestellt werden kann (false) — das Bild wird dann auf
+  /// den abweichenden Bildbereich gestreckt.
+  bool useImageAspect = true;
 
   /// Tatsächlich für die Winkel-/Längen-Umrechnung verwendetes
   /// Seitenverhältnis (Höhe/Breite) — wird von der Leinwand beim Layout
@@ -335,6 +340,7 @@ class AppState extends ChangeNotifier {
   }
 
   void clearBackground() {
+    if (useImageAspect) sceneAspect = contentAspect.clamp(0.2, 2.0);
     background = null;
     backgroundPath = null;
     changed();
@@ -401,7 +407,6 @@ class AppState extends ChangeNotifier {
             .take(kMaxStrips),
       );
     backgroundDim = (data['backgroundDim'] as num?)?.toDouble() ?? 0.5;
-    ledSize = (data['ledSize'] as num?)?.toDouble() ?? 6;
     glow = (data['glow'] as num?)?.toDouble() ?? 1.0;
     sceneWidthMeters = (data['sceneWidthMeters'] as num?)?.toDouble() ?? 5.0;
     final path = data['backgroundPath'] as String?;
@@ -470,8 +475,8 @@ class _Snapshot {
       selectedSectionIndex = s.selectedSectionIndex,
       sceneWidthMeters = s.sceneWidthMeters,
       sceneAspect = s.sceneAspect,
+      useImageAspect = s.useImageAspect,
       backgroundDim = s.backgroundDim,
-      ledSize = s.ledSize,
       glow = s.glow;
 
   final List<LedStrip> strips;
@@ -479,8 +484,8 @@ class _Snapshot {
   final int selectedSectionIndex;
   final double sceneWidthMeters;
   final double sceneAspect;
+  final bool useImageAspect;
   final double backgroundDim;
-  final double ledSize;
   final double glow;
 
   void restoreTo(AppState s) {
@@ -491,8 +496,8 @@ class _Snapshot {
     s.selectedSectionIndex = selectedSectionIndex;
     s.sceneWidthMeters = sceneWidthMeters;
     s.sceneAspect = sceneAspect;
+    s.useImageAspect = useImageAspect;
     s.backgroundDim = backgroundDim;
-    s.ledSize = ledSize;
     s.glow = glow;
   }
 }

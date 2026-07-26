@@ -18,6 +18,9 @@ class LabeledSlider extends StatefulWidget {
     this.labelWidth = 90,
     this.numberEntry = false,
     this.unitSuffix,
+    this.decimals = 0,
+    this.displayScale = 1,
+    this.fieldWidth = 64,
   });
 
   final String label;
@@ -31,6 +34,14 @@ class LabeledSlider extends StatefulWidget {
   final bool numberEntry;
   final String? unitSuffix;
 
+  /// Nachkommastellen im Zahlenfeld (0 = ganze Zahl).
+  final int decimals;
+
+  /// Faktor zwischen internem Wert und angezeigter Zahl, z. B. 100 um
+  /// einen Anteil (0.2–2.0) als Prozentzahl (20–200) einzugeben.
+  final double displayScale;
+  final double fieldWidth;
+
   @override
   State<LabeledSlider> createState() => _LabeledSliderState();
 }
@@ -39,7 +50,12 @@ class _LabeledSliderState extends State<LabeledSlider> {
   late final _controller = TextEditingController(text: _text);
   final _focusNode = FocusNode();
 
-  String get _text => widget.value.round().toString();
+  String get _text {
+    final scaled = widget.value * widget.displayScale;
+    return widget.decimals > 0
+        ? scaled.toStringAsFixed(widget.decimals).replaceAll('.', ',')
+        : scaled.round().toString();
+  }
 
   @override
   void initState() {
@@ -61,7 +77,9 @@ class _LabeledSliderState extends State<LabeledSlider> {
 
   void _submit(String text) {
     final v = double.tryParse(text.replaceAll(',', '.'));
-    if (v != null) widget.onChanged(v.clamp(widget.min, widget.max));
+    if (v == null) return;
+    final unscaled = v / widget.displayScale;
+    widget.onChanged(unscaled.clamp(widget.min, widget.max));
   }
 
   @override
@@ -91,13 +109,15 @@ class _LabeledSliderState extends State<LabeledSlider> {
         ),
         if (widget.numberEntry)
           SizedBox(
-            width: 64,
+            width: widget.fieldWidth,
             child: TextField(
               controller: _controller,
               focusNode: _focusNode,
               textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 12),
-              keyboardType: TextInputType.number,
+              keyboardType: TextInputType.numberWithOptions(
+                decimal: widget.decimals > 0,
+              ),
               decoration: InputDecoration(
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(

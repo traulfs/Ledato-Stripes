@@ -12,6 +12,10 @@ const List<int> kLedDensities = [30, 60, 144];
 /// LEDs/m, unabhängig von der Dichte des gerade gewählten Stripes.
 const int kGridLedsPerMeter = 60;
 
+/// Reale Breite eines LED-Stripes in Millimetern — bestimmt zusammen mit
+/// dem Maßstab (Bildbreite in Metern) die Darstellungsgröße der LEDs.
+const double kStripWidthMm = 12.0;
+
 /// Rundet einen Winkel (Radiant) auf die nächste ganze Gradzahl — der Winkel
 /// eines Abschnitts ist immer nur in vollen Grad einstellbar, egal ob per
 /// Schieberegler, Zahleneingabe oder Ziehen am Drehgriff auf der Leinwand.

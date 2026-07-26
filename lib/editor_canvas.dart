@@ -24,8 +24,8 @@ class EditorCanvas extends StatefulWidget {
 
 class _EditorCanvasState extends State<EditorCanvas> {
   static const double _hitRadius = 18;
-  static const double _minZoom = 0.3;
-  static const double _maxZoom = 8.0;
+  static const double _minZoom = 0.1;
+  static const double _maxZoom = 20.0;
 
   // Ansichtstransformation: screen = world * _zoom + _view
   double _zoom = 1.0;
@@ -45,16 +45,18 @@ class _EditorCanvasState extends State<EditorCanvas> {
   AppState get st => widget.state;
 
   /// Rechteck, in das das Hintergrundbild eingepasst wird (contain). Ohne
-  /// Bild wird stattdessen [AppState.sceneAspect] als virtuelles
-  /// Seitenverhältnis eingepasst — sonst wäre der Bildbereich genauso groß
-  /// wie das Leinwand-Widget und damit von Fenster-/Bildschirmform des
-  /// jeweiligen Geräts abhängig: dieselbe Konfiguration sähe je nach Gerät
-  /// (breites Fenster vs. hochkantiges Handy-Display) völlig verzerrt aus,
-  /// da Winkel und Abstände relativ zu diesem Seitenverhältnis interpretiert
-  /// werden (siehe [AppState.sectionEnd]).
+  /// Bild, oder wenn [AppState.useImageAspect] deaktiviert ist, wird
+  /// stattdessen [AppState.sceneAspect] als virtuelles Seitenverhältnis
+  /// eingepasst (das Bild wird dann auf dieses Rechteck gestreckt) — sonst
+  /// wäre der Bildbereich sonst genauso groß wie das Leinwand-Widget und
+  /// damit von Fenster-/Bildschirmform des jeweiligen Geräts abhängig:
+  /// dieselbe Konfiguration sähe je nach Gerät (breites Fenster vs.
+  /// hochkantiges Handy-Display) völlig verzerrt aus, da Winkel und Abstände
+  /// relativ zu diesem Seitenverhältnis interpretiert werden (siehe
+  /// [AppState.sectionEnd]).
   Rect _computeContentRect(Size size) {
     final img = st.background;
-    final refSize = img != null
+    final refSize = (img != null && st.useImageAspect)
         ? Size(img.width.toDouble(), img.height.toDouble())
         : Size(1, st.sceneAspect);
     final fitted = applyBoxFit(BoxFit.contain, refSize, size).destination;
@@ -160,6 +162,21 @@ class _EditorCanvasState extends State<EditorCanvas> {
 
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final focal = d.localFocalPoint;
+
+    // Kommt während des Ziehens eines Abschnitts ein zweiter Finger dazu
+    // (Beginn eines Pinch-Zooms), Abschnitt-Drag abbrechen und stattdessen
+    // die Ansicht zoomen/verschieben — sonst gewinnt auf dem Touchscreen oft
+    // zufällig der erste Finger, wenn er nahe an einem Abschnitt aufsetzt.
+    if (_dragStrip != null && d.pointerCount > 1) {
+      _dragStrip = null;
+      _dragSectionIndex = -1;
+      _dragIsRotate = false;
+      _panView = true;
+      _prevFocal = focal;
+      _prevScale = d.scale;
+      return;
+    }
+
     final s = _dragStrip;
 
     if (s != null &&
@@ -394,7 +411,8 @@ class _StripPainter extends CustomPainter {
       final leds = _placedLeds(s);
       if (leds.isEmpty) continue;
 
-      final ledR = state.ledSize;
+      final pxPerMeter = contentRect.width / state.sceneWidthMeters;
+      final ledR = pxPerMeter * (kStripWidthMm / 1000) / 2;
       final glowR = ledR * (1.5 + state.glow * 2.5);
       final glowPaint = Paint()
         ..blendMode = BlendMode.plus

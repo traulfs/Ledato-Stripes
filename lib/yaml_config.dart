@@ -17,9 +17,9 @@ String encodeConfigYaml(AppState st) {
     ..writeln('# Ledato Stripes Konfiguration')
     ..writeln('sceneWidthMeters: ${_num(st.sceneWidthMeters)}')
     ..writeln('sceneAspect: ${_num(st.sceneAspect)}')
+    ..writeln('useImageAspect: ${st.useImageAspect}')
     ..writeln('backgroundPath: ${_str(st.backgroundPath)}')
     ..writeln('backgroundDim: ${_num(st.backgroundDim)}')
-    ..writeln('ledSize: ${_num(st.ledSize)}')
     ..writeln('glow: ${_num(st.glow)}');
 
   if (st.strips.isEmpty) {
@@ -66,8 +66,8 @@ String? applyConfigYaml(AppState st, String text) {
 
   st.sceneWidthMeters = _numField(doc['sceneWidthMeters'], 5.0);
   st.sceneAspect = _numField(doc['sceneAspect'], 0.6);
+  st.useImageAspect = doc['useImageAspect'] != false;
   st.backgroundDim = _numField(doc['backgroundDim'], 0.5);
-  st.ledSize = _numField(doc['ledSize'], 6.0);
   st.glow = _numField(doc['glow'], 1.0);
 
   final strips = <LedStrip>[];
