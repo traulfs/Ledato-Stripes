@@ -331,7 +331,7 @@ class _StripPainter extends CustomPainter {
     required this.contentRect,
     required this.zoom,
     required this.view,
-  }) : super(repaint: Listenable.merge([state, time]));
+  }) : super(repaint: Listenable.merge([state, time, state.ddpRepaint]));
 
   final AppState state;
   final ValueNotifier<double> time;

@@ -42,6 +42,14 @@ class AppState extends ChangeNotifier {
   int ddpPort = kDdpDefaultPort;
   final Map<String, _DdpOverride> _ddpOverrides = {};
 
+  /// Eigener Notifier für empfangene DDP-Farben, getrennt von
+  /// [notifyListeners] — DDP-Pakete kommen viel häufiger rein, als die
+  /// restliche UI (App-Leiste, Seitenpanel, Drawer) neu gebaut werden muss.
+  /// Nur die Leinwand hört darauf (siehe [EditorCanvas]), damit z. B. das
+  /// Öffnen des Einstellungs-Drawers nicht durch jedes einzelne Paket
+  /// ausgebremst wird.
+  final ChangeNotifier ddpRepaint = ChangeNotifier();
+
   bool get ddpServerRunning => _ddpServer?.isRunning ?? false;
 
   Future<void> startDdpServer([int? port]) async {
@@ -72,7 +80,7 @@ class AppState extends ChangeNotifier {
       if (idx >= 0 && idx < ov.colors.length) ov.colors[idx] = colors[i];
     }
     ov.lastUpdate = DateTime.now();
-    notifyListeners();
+    ddpRepaint.notifyListeners();
   }
 
   /// Per DDP empfangene Farbe für die LED [globalIndex] (fortlaufend über
@@ -437,6 +445,7 @@ class AppState extends ChangeNotifier {
     _saveTimer?.cancel();
     _undoCoalesceTimer?.cancel();
     _ddpServer?.stop();
+    ddpRepaint.dispose();
     super.dispose();
   }
 

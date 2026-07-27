@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """DDP-Client, der aus den zwei Uhr-Stripes eine analoge Uhr macht.
 
-Braucht --config (Pfad zu einer exportierten Ledato-Stripes-YAML): daraus
-wird die tatsächliche Sektionsstruktur von Stripe 1 (erster Stripe in der
-Konfiguration) sowie die Gesamt-LED-Zahl von Stripe 2 (zweiter Stripe)
-übernommen. Wichtig dabei: die 12 Sektionen von Stripe 1 zeigen abwechselnd
-nach außen und nach innen (je nach Start-/Winkel-Geometrie) — welches Ende
-einer Sektion (LED-Index 0 oder das letzte) physisch näher am Zentrum
-liegt, wird darum pro Sektion aus Start-Punkt, Winkel, LED-Anzahl,
-ledsPerMeter, sceneWidthMeters und sceneAspect nachgerechnet (dieselbe
-Formel wie AppState.sectionEnd in der App), statt eine einheitliche
-Reihenfolge für alle Sektionen anzunehmen.
+Fest auf das aktuelle Uhr-Layout zugeschnitten: Stripe 1 (Ziel-ID 1) hat
+12 Sektionen zu je 6 LEDs (72 LEDs), die abwechselnd nach außen und nach
+innen zeigen (siehe SECTION_SPECS) — welches LED-Ende (Index 0 oder das
+letzte) physisch näher am Zentrum liegt, wechselt pro Sektion je nach
+Start-/Winkel-Geometrie in der App-Konfiguration. Stripe 2 (Ziel-ID 2)
+ist ein durchgehender Ring aus 60 LEDs.
 
 Anzeige:
     Stripe 1: Die physisch inneren LEDs (eine mehr als die äußeren) einer
@@ -27,21 +23,19 @@ Anzeige:
               Ringform). Keine Stundenanzeige auf diesem Stripe.
 
 Beispiele:
-    python3 ddp_clock.py --host 192.168.1.50 --config ledato_stripes_config.yaml
+    python3 ddp_clock.py --host 192.168.1.50
 
     # Mit --speed schneller durchlaufen lassen (zum Testen)
-    python3 ddp_clock.py --config ledato_stripes_config.yaml --speed 60
+    python3 ddp_clock.py --speed 60
 
     # Feste Uhrzeit anzeigen (zum Testen einzelner Positionen)
-    python3 ddp_clock.py --config ledato_stripes_config.yaml --time 14:35:07
+    python3 ddp_clock.py --time 14:35:07
 """
 
 from __future__ import annotations
 
 import argparse
-import math
 import socket
-import sys
 import time
 from datetime import datetime
 from typing import List, Tuple
@@ -59,74 +53,13 @@ FAINT_GREEN: Pixel = (0, 50, 0)  # Kontur der Uhrenform, wo keine Zeit angezeigt
 STRIPE1_DEST = 1  # Sektionen: Stunde (innen) + Minutenmarke (außen)
 STRIPE2_DEST = 2  # durchgehender Ring: Sekunde + Minute + Stunde als Zeiger
 
-# (LED-Anzahl der Sektion, LED-Index 0 liegt physisch innen?)
+# (LED-Anzahl der Sektion, LED-Index 0 liegt physisch innen?) — aus der
+# App-Konfiguration ermittelt: die 12 Sektionen von Stripe 1 wechseln sich
+# ab, weil ihre Start-/Winkel-Geometrie abwechselnd nach außen bzw. innen
+# zeigt.
 SectionSpec = Tuple[int, bool]
-
-
-def _section_start_is_inner(
-    start: Tuple[float, float],
-    angle_degrees: float,
-    led_count: int,
-    leds_per_meter: float,
-    scene_width_m: float,
-    scene_aspect: float,
-) -> bool:
-    """Gleiche Rechnung wie AppState.sectionEnd in der App: bestimmt, ob der
-    Start- oder der Endpunkt einer Sektion näher am Bildzentrum (0.5, 0.5)
-    liegt — die 12 Sektionen zeigen je nach Winkel abwechselnd nach außen
-    oder nach innen, das lässt sich nicht pauschal annehmen."""
-    length_m = (led_count - 1) / leds_per_meter if led_count > 1 else 0.0
-    rad = math.radians(angle_degrees)
-    ay = scene_aspect if scene_aspect > 1e-6 else 1.0
-    end_x = start[0] + (length_m * math.cos(rad)) / scene_width_m
-    end_y = start[1] + (length_m * math.sin(rad)) / (scene_width_m * ay)
-    d_start = math.hypot(start[0] - 0.5, start[1] - 0.5)
-    d_end = math.hypot(end_x - 0.5, end_y - 0.5)
-    return d_start <= d_end
-
-
-def load_layout_from_config(path: str) -> Tuple[List[SectionSpec], int]:
-    """Liest Sektionsgeometrie von Stripe 1 sowie die Gesamt-LED-Zahl von
-    Stripe 2 aus einer exportierten Ledato-Stripes-YAML (Reihenfolge der
-    Stripes in der Datei = Position in der App-Konfiguration)."""
-    try:
-        import yaml
-    except ImportError:
-        sys.exit("Für --config wird PyYAML benötigt: pip install pyyaml")
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    strips = data.get("strips", [])
-    if len(strips) < 2:
-        sys.exit(f"{path} enthält weniger als 2 Stripes.")
-
-    scene_width_m = float(data.get("sceneWidthMeters", 1.0))
-    scene_aspect = float(data.get("sceneAspect", 1.0))
-
-    strip1 = strips[0]
-    leds_per_meter = float(strip1.get("ledsPerMeter", 60))
-    section_specs: List[SectionSpec] = []
-    for sec in strip1.get("sections", []):
-        led_count = int(sec.get("ledCount", 0))
-        start = sec.get("start", [0.5, 0.5])
-        angle_degrees = float(sec.get("angleDegrees", 0.0))
-        inner_first = _section_start_is_inner(
-            (float(start[0]), float(start[1])),
-            angle_degrees,
-            led_count,
-            leds_per_meter,
-            scene_width_m,
-            scene_aspect,
-        )
-        section_specs.append((led_count, inner_first))
-
-    stripe2_total = sum(
-        int(sec.get("ledCount", 0)) for sec in strips[1].get("sections", [])
-    )
-    if not section_specs:
-        sys.exit(f"Stripe 1 in {path} hat keine Sektionen.")
-    if stripe2_total <= 0:
-        sys.exit(f"Stripe 2 in {path} hat keine LEDs.")
-    return section_specs, stripe2_total
+SECTION_SPECS: List[SectionSpec] = [(6, i % 2 == 0) for i in range(12)]
+POINTER_TOTAL = 60  # LEDs auf Stripe 2
 
 
 def stripe1_frame(
@@ -182,14 +115,11 @@ def main() -> None:
     )
     parser.add_argument("--host", default="127.0.0.1", help="Ziel-IP der App (Standard: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=DDP_DEFAULT_PORT, help=f"DDP-Port (Standard: {DDP_DEFAULT_PORT})")
-    parser.add_argument("--config", required=True, help="Pfad zu einer exportierten Ledato-Stripes-YAML")
     parser.add_argument("--fps", type=float, default=5.0, help="Bildwiederholrate (Standard: 5)")
     parser.add_argument("--speed", type=float, default=1.0, help="Zeitraffer-Faktor, z. B. 60 = eine simulierte Minute pro Sekunde (Standard: 1, Echtzeit)")
     parser.add_argument("--time", help="Feste Startzeit HH:MM:SS statt Systemzeit (läuft ab da mit --speed weiter)")
     parser.add_argument("--duration", type=float, help="Laufzeit in Sekunden (Standard: unbegrenzt, Strg+C zum Beenden)")
     args = parser.parse_args()
-
-    section_specs, pointer_total = load_layout_from_config(args.config)
 
     if args.time:
         t0 = datetime.strptime(args.time, "%H:%M:%S")
@@ -198,11 +128,11 @@ def main() -> None:
         now = datetime.now()
         sim_start_seconds = now.hour * 3600 + now.minute * 60 + now.second
 
-    print(f"Ziel: {args.host}:{args.port}  (Layout aus {args.config})")
+    print(f"Ziel: {args.host}:{args.port}")
     print(
-        f"Stripe 1: {sum(n for n, _ in section_specs)} LEDs in {len(section_specs)} Sektionen "
+        f"Stripe 1: {sum(n for n, _ in SECTION_SPECS)} LEDs in {len(SECTION_SPECS)} Sektionen "
         f"(Stunde blau innen, Minute rot außen)  |  "
-        f"Stripe 2: {pointer_total} LEDs (Sekunde gelb, Minute rot)"
+        f"Stripe 2: {POINTER_TOTAL} LEDs (Sekunde gelb, Minute rot)"
     )
     print("Strg+C zum Beenden.")
 
@@ -223,13 +153,13 @@ def main() -> None:
                 sock,
                 addr,
                 STRIPE1_DEST,
-                stripe1_frame(hour, minute, section_specs),
+                stripe1_frame(hour, minute, SECTION_SPECS),
             )
             send_ddp_frame(
                 sock,
                 addr,
                 STRIPE2_DEST,
-                stripe2_frame(second, minute, pointer_total),
+                stripe2_frame(second, minute, POINTER_TOTAL),
             )
 
             elapsed = time.monotonic() - frame_start
