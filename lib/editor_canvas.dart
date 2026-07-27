@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard;
 
 import 'app_state.dart';
 import 'effects.dart';
@@ -31,13 +32,24 @@ class _EditorCanvasState extends State<EditorCanvas> {
   double _zoom = 1.0;
   Offset _view = Offset.zero;
 
-  // Aktiver Drag: ein Abschnitt (verschieben oder drehen) oder die Ansicht.
+  // Aktiver Drag: ein Abschnitt (verschieben oder drehen), mehrere
+  // ausgewählte Abschnitte gemeinsam, oder die Ansicht.
   LedStrip? _dragStrip;
   int _dragSectionIndex = -1;
   bool _dragIsRotate = false;
+  bool _dragIsGroup = false;
   bool _panView = false;
   Offset _prevFocal = Offset.zero;
   double _prevScale = 1.0;
+
+  // Auswahlrahmen (nur bei gehaltener Cmd/Strg-Taste auf freier Fläche),
+  // in Weltkoordinaten.
+  Offset? _marqueeStart;
+  Rect? _marqueeRect;
+
+  bool get _modifierHeld =>
+      HardwareKeyboard.instance.isMetaPressed ||
+      HardwareKeyboard.instance.isControlPressed;
 
   Rect _contentRect =
       Rect.zero; // Bereich, auf den sich die 0..1-Koordinaten beziehen
@@ -141,6 +153,9 @@ class _EditorCanvasState extends State<EditorCanvas> {
     _dragStrip = null;
     _dragSectionIndex = -1;
     _dragIsRotate = false;
+    _dragIsGroup = false;
+    _marqueeStart = null;
+    _marqueeRect = null;
     _panView = true;
 
     // Ein Finger/Mauszeiger im Bearbeiten-Modus: Abschnitt greifen.
@@ -148,14 +163,37 @@ class _EditorCanvasState extends State<EditorCanvas> {
     if (st.editMode &&
         d.pointerCount <= 1 &&
         d.kind != PointerDeviceKind.trackpad) {
-      final hit = _hitTest(_screenToWorld(d.localFocalPoint));
+      final world = _screenToWorld(d.localFocalPoint);
+      final hit = _hitTest(world);
       if (hit != null) {
-        _dragStrip = hit.$1;
-        _dragSectionIndex = hit.$2;
-        _dragIsRotate = hit.$3;
+        final (strip, sectionIndex, isRotate) = hit;
+        // Modifier-Klick bzw. aktiver Mehrfachauswahl-Modus: Auswahl nur
+        // umschalten, nicht ziehen (Konvention wie in Zeichenprogrammen).
+        if (_modifierHeld || st.multiSelectMode) {
+          st.toggleInSelection(strip.id, sectionIndex);
+          _panView = false;
+          return;
+        }
+        _dragStrip = strip;
+        _dragSectionIndex = sectionIndex;
+        _dragIsRotate = isRotate;
         _panView = false;
-        st.select(hit.$1.id);
-        st.selectSection(hit.$2);
+        if (!isRotate &&
+            st.selection.length > 1 &&
+            st.selection.contains((strip.id, sectionIndex))) {
+          // Ziehen an einem bereits mehrfach ausgewählten Abschnitt bewegt
+          // die ganze Auswahl gemeinsam — Rotieren bleibt immer Einzelziel.
+          _dragIsGroup = true;
+        } else {
+          st.selectOnly(strip.id, sectionIndex);
+        }
+        return;
+      }
+      if (_modifierHeld) {
+        // Auswahlrahmen nur mit gehaltener Cmd/Strg-Taste — sonst bleibt
+        // Ziehen auf freier Fläche Pan (wichtig auf Touch-Geräten).
+        _marqueeStart = world;
+        _panView = false;
       }
     }
   }
@@ -163,21 +201,58 @@ class _EditorCanvasState extends State<EditorCanvas> {
   void _onScaleUpdate(ScaleUpdateDetails d) {
     final focal = d.localFocalPoint;
 
-    // Kommt während des Ziehens eines Abschnitts ein zweiter Finger dazu
-    // (Beginn eines Pinch-Zooms), Abschnitt-Drag abbrechen und stattdessen
-    // die Ansicht zoomen/verschieben — sonst gewinnt auf dem Touchscreen oft
-    // zufällig der erste Finger, wenn er nahe an einem Abschnitt aufsetzt.
-    if (_dragStrip != null && d.pointerCount > 1) {
+    // Kommt während des Ziehens eines Abschnitts oder eines Auswahlrahmens
+    // ein zweiter Finger dazu (Beginn eines Pinch-Zooms), abbrechen und
+    // stattdessen die Ansicht zoomen/verschieben — sonst gewinnt auf dem
+    // Touchscreen oft zufällig der erste Finger, wenn er nahe an einem
+    // Abschnitt aufsetzt.
+    if ((_dragStrip != null || _marqueeStart != null) && d.pointerCount > 1) {
       _dragStrip = null;
       _dragSectionIndex = -1;
       _dragIsRotate = false;
+      _dragIsGroup = false;
+      _marqueeStart = null;
+      setState(() => _marqueeRect = null);
       _panView = true;
       _prevFocal = focal;
       _prevScale = d.scale;
       return;
     }
 
+    if (_marqueeStart != null) {
+      setState(
+        () => _marqueeRect = Rect.fromPoints(
+          _marqueeStart!,
+          _screenToWorld(focal),
+        ),
+      );
+      return;
+    }
+
     final s = _dragStrip;
+
+    if (_dragIsGroup && s != null) {
+      // Denselben Bildschirm-Delta auf jeden ausgewählten Abschnitt
+      // anwenden, stripeübergreifend — Winkel bleiben dabei unverändert.
+      final delta = (focal - _prevFocal) / _zoom;
+      final norm = Offset(
+        delta.dx / _contentRect.width,
+        delta.dy / _contentRect.height,
+      );
+      for (final strip in st.strips) {
+        for (var i = 0; i < strip.sections.length; i++) {
+          if (!st.selection.contains((strip.id, i))) continue;
+          final sec = strip.sections[i];
+          sec.start = Offset(
+            (sec.start.dx + norm.dx).clamp(0.0, 1.0),
+            (sec.start.dy + norm.dy).clamp(0.0, 1.0),
+          );
+        }
+      }
+      _prevFocal = focal;
+      st.changed();
+      return;
+    }
 
     if (s != null &&
         _dragSectionIndex >= 0 &&
@@ -227,17 +302,42 @@ class _EditorCanvasState extends State<EditorCanvas> {
   }
 
   void _onScaleEnd() {
+    if (_marqueeRect != null) {
+      final rect = _marqueeRect!;
+      final hits = <SelectionKey>{};
+      for (final s in st.strips) {
+        for (var i = 0; i < s.sections.length; i++) {
+          final sec = s.sections[i];
+          final startC = _toCanvas(sec.start);
+          final endC = _toCanvas(st.sectionEnd(s, sec));
+          if (rect.contains(startC) || rect.contains(endC)) {
+            hits.add((s.id, i));
+          }
+        }
+      }
+      st.addRangeToSelection(hits);
+    }
     _dragStrip = null;
     _dragSectionIndex = -1;
     _dragIsRotate = false;
+    _dragIsGroup = false;
+    _marqueeStart = null;
+    setState(() => _marqueeRect = null);
     _panView = false;
   }
 
   void _onTapUp(TapUpDetails d) {
     if (!st.editMode) return;
     final hit = _hitTest(_screenToWorld(d.localPosition));
-    st.select(hit?.$1.id);
-    if (hit != null) st.selectSection(hit.$2);
+    if (hit == null) {
+      st.clearSelection();
+      return;
+    }
+    if (_modifierHeld || st.multiSelectMode) {
+      st.toggleInSelection(hit.$1.id, hit.$2);
+    } else {
+      st.selectOnly(hit.$1.id, hit.$2);
+    }
   }
 
   @override
@@ -267,6 +367,7 @@ class _EditorCanvasState extends State<EditorCanvas> {
                         contentRect: _contentRect,
                         zoom: _zoom,
                         view: _view,
+                        marqueeRect: _marqueeRect,
                       ),
                     ),
                   ),
@@ -331,6 +432,7 @@ class _StripPainter extends CustomPainter {
     required this.contentRect,
     required this.zoom,
     required this.view,
+    this.marqueeRect,
   }) : super(repaint: Listenable.merge([state, time, state.ddpRepaint]));
 
   final AppState state;
@@ -338,6 +440,7 @@ class _StripPainter extends CustomPainter {
   final Rect contentRect;
   final double zoom;
   final Offset view;
+  final Rect? marqueeRect; // Auswahlrahmen in Weltkoordinaten, falls aktiv
 
   Offset _toCanvas(Offset norm) => Offset(
     contentRect.left + norm.dx * contentRect.width,
@@ -448,7 +551,22 @@ class _StripPainter extends CustomPainter {
       if (state.editMode) _paintEditOverlay(canvas, s, leds);
     }
 
+    if (state.editMode && marqueeRect != null) {
+      _paintMarquee(canvas, marqueeRect!);
+    }
+
     canvas.restore();
+  }
+
+  void _paintMarquee(Canvas canvas, Rect rect) {
+    canvas.drawRect(rect, Paint()..color = const Color(0x332196F3));
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5 / zoom
+        ..color = const Color(0xFF2196F3),
+    );
   }
 
   /// Editier-Overlay: Linien und Griffe behalten unabhängig vom Zoom ihre
@@ -458,15 +576,15 @@ class _StripPainter extends CustomPainter {
     LedStrip s,
     List<(Offset pos, StripSection section, int localIndex)> leds,
   ) {
-    final isSelStrip = s.id == state.selectedId;
-    final selSectionIdx = isSelStrip && s.sections.isNotEmpty
-        ? state.selectedSectionIndex.clamp(0, s.sections.length - 1)
-        : -1;
+    final isSelStrip = List.generate(
+      s.sections.length,
+      (i) => i,
+    ).any((i) => state.selection.contains((s.id, i)));
 
     Offset? prevEnd;
     for (var si = 0; si < s.sections.length; si++) {
       final sec = s.sections[si];
-      final isSelSection = si == selSectionIdx;
+      final isSelSection = state.selection.contains((s.id, si));
       final startC = _toCanvas(sec.start);
       final endC = _toCanvas(state.sectionEnd(s, sec));
 

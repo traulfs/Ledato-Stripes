@@ -14,10 +14,29 @@ import 'yaml_config.dart';
 
 /// Zentraler App-Zustand: Stripes, Hintergrundbild, globale Darstellung.
 /// Änderungen werden verzögert automatisch als YAML-Datei gespeichert.
+/// Ein Abschnitt in der Mehrfachauswahl: Stripe-ID + Abschnitt-Index. Ein
+/// ganzer ausgewählter Stripe ist einfach die Menge aller seiner Indizes,
+/// dafür gibt es keinen eigenen Fall.
+typedef SelectionKey = (String stripId, int sectionIndex);
+
 class AppState extends ChangeNotifier {
   final List<LedStrip> strips = [];
   String? selectedId;
   int selectedSectionIndex = 0;
+
+  /// Mehrfachauswahl für gemeinsames Verschieben/Optik-Bearbeiten. Enthält,
+  /// solange nicht leer, immer auch das "primäre" Element
+  /// ([selectedId]/[selectedSectionIndex]) — die beiden alten Felder bleiben
+  /// bestehen und treiben weiterhin Dropdown, Rename-Dialog etc.; [selection]
+  /// ist rein additiv dazu und wird nicht mit Undo/Speichern erfasst (siehe
+  /// [toggleInSelection]).
+  final Set<SelectionKey> selection = {};
+
+  /// Symbolleisten-Umschalter: ist er aktiv, erweitert ein einfacher Klick/
+  /// Tap die Auswahl statt sie zu ersetzen — Ersatz für die Umschalt-/Cmd-
+  /// Taste auf Touch-Geräten ohne Zusatztasten.
+  bool multiSelectMode = false;
+
   bool simulate =
       true; // true = Simulation läuft, false = Editiermodus-Standbild
   bool editMode = true; // Handles/Linien anzeigen und bearbeiten
@@ -188,6 +207,8 @@ class AppState extends ChangeNotifier {
   void select(String? id) {
     selectedId = id;
     selectedSectionIndex = 0;
+    selection.clear();
+    if (id != null) selection.add((id, 0));
     notifyListeners();
   }
 
@@ -195,7 +216,100 @@ class AppState extends ChangeNotifier {
     final s = selected;
     if (s == null || s.sections.isEmpty) return;
     selectedSectionIndex = index.clamp(0, s.sections.length - 1);
+    selection
+      ..clear()
+      ..add((s.id, selectedSectionIndex));
     notifyListeners();
+  }
+
+  // ---------- Mehrfachauswahl ----------
+
+  /// Ersetzt die gesamte Auswahl durch genau dieses eine Element (normaler
+  /// Klick/Tap ohne Zusatztaste bzw. ohne aktiven [multiSelectMode]).
+  void selectOnly(String stripId, int sectionIndex) {
+    selectedId = stripId;
+    selectedSectionIndex = sectionIndex;
+    selection
+      ..clear()
+      ..add((stripId, sectionIndex));
+    notifyListeners();
+  }
+
+  /// Fügt ein Element hinzu oder entfernt es (Umschalt-/Cmd-Klick bzw. Tap
+  /// bei aktivem [multiSelectMode]).
+  void toggleInSelection(String stripId, int sectionIndex) {
+    final key = (stripId, sectionIndex);
+    if (!selection.remove(key)) {
+      selection.add(key);
+      selectedId = stripId;
+      selectedSectionIndex = sectionIndex;
+    } else if (selectedId == stripId && selectedSectionIndex == sectionIndex) {
+      // Primäres Element wurde abgewählt — ein verbliebenes übernimmt die
+      // Rolle, sonst ist nichts mehr ausgewählt.
+      if (selection.isNotEmpty) {
+        final next = selection.first;
+        selectedId = next.$1;
+        selectedSectionIndex = next.$2;
+      } else {
+        selectedId = null;
+        selectedSectionIndex = 0;
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Fügt mehrere Elemente auf einmal hinzu (Ergebnis eines Auswahlrahmens)
+  /// — immer additiv zur bestehenden Auswahl.
+  void addRangeToSelection(Iterable<SelectionKey> keys) {
+    if (keys.isEmpty) return;
+    selection.addAll(keys);
+    final primary = selection.first;
+    selectedId = primary.$1;
+    selectedSectionIndex = primary.$2;
+    notifyListeners();
+  }
+
+  /// Entfernt mehrere Elemente auf einmal (z. B. „ganzen Stripe abwählen“).
+  void removeRangeFromSelection(Iterable<SelectionKey> keys) {
+    if (keys.isEmpty) return;
+    selection.removeAll(keys);
+    final id = selectedId;
+    if (id != null && !selection.contains((id, selectedSectionIndex))) {
+      if (selection.isNotEmpty) {
+        final next = selection.first;
+        selectedId = next.$1;
+        selectedSectionIndex = next.$2;
+      } else {
+        selectedId = null;
+        selectedSectionIndex = 0;
+      }
+    }
+    notifyListeners();
+  }
+
+  void clearSelection() {
+    selectedId = null;
+    selectedSectionIndex = 0;
+    selection.clear();
+    notifyListeners();
+  }
+
+  void toggleMultiSelectMode() {
+    multiSelectMode = !multiSelectMode;
+    notifyListeners();
+  }
+
+  /// Wendet [mutate] auf jeden Abschnitt der aktuellen Mehrfachauswahl an
+  /// und fasst das Ergebnis in einem einzigen Undo-Schritt zusammen (analog
+  /// zu den Einzel-Editierfeldern, die selbst [changed] aufrufen).
+  void editSelection(void Function(StripSection) mutate) {
+    if (selection.isEmpty) return;
+    for (final s in strips) {
+      for (var i = 0; i < s.sections.length; i++) {
+        if (selection.contains((s.id, i))) mutate(s.sections[i]);
+      }
+    }
+    changed();
   }
 
   LedStrip? addStrip() {
@@ -215,6 +329,9 @@ class AppState extends ChangeNotifier {
     strips.add(strip);
     selectedId = strip.id;
     selectedSectionIndex = 0;
+    selection
+      ..clear()
+      ..add((strip.id, 0));
     changed();
     return strip;
   }
@@ -229,6 +346,10 @@ class AppState extends ChangeNotifier {
   void addSection(LedStrip s) {
     final remaining = kMaxLedsPerStrip - s.ledCount;
     if (remaining <= 0) return;
+    // Abschnitt-Indizes dieses Stripes verschieben sich potenziell —
+    // bestehende Mehrfachauswahl-Einträge dafür verwerfen, statt sie auf
+    // die falsche Sektion zeigen zu lassen.
+    selection.removeWhere((k) => k.$1 == s.id);
     if (s.sections.isEmpty) {
       s.sections.add(
         StripSection(
@@ -238,6 +359,7 @@ class AppState extends ChangeNotifier {
         ),
       );
       selectedSectionIndex = 0;
+      selection.add((s.id, 0));
       changed();
       return;
     }
@@ -249,6 +371,7 @@ class AppState extends ChangeNotifier {
       ..ledCount = math.min(base.ledCount, remaining);
     s.sections.insert(baseIdx + 1, section);
     selectedSectionIndex = baseIdx + 1;
+    selection.add((s.id, baseIdx + 1));
     changed();
   }
 
@@ -261,6 +384,10 @@ class AppState extends ChangeNotifier {
     if (selectedSectionIndex >= s.sections.length) {
       selectedSectionIndex = s.sections.length - 1;
     }
+    // Nachfolgende Indizes haben sich verschoben — Mehrfachauswahl für
+    // diesen Stripe auf das verbliebene primäre Element zurücksetzen.
+    selection.removeWhere((k) => k.$1 == s.id);
+    if (selectedId == s.id) selection.add((s.id, selectedSectionIndex));
     changed();
   }
 
@@ -270,6 +397,7 @@ class AppState extends ChangeNotifier {
       selectedId = null;
       selectedSectionIndex = 0;
     }
+    selection.removeWhere((k) => k.$1 == s.id);
     changed();
   }
 
@@ -307,6 +435,7 @@ class AppState extends ChangeNotifier {
     if (_undoStack.isEmpty) return;
     _redoStack.add(_Snapshot(this));
     _undoStack.removeLast().restoreTo(this);
+    _resyncSelectionAfterRestore();
     notifyListeners();
     _scheduleSave();
   }
@@ -315,8 +444,18 @@ class AppState extends ChangeNotifier {
     if (_redoStack.isEmpty) return;
     _undoStack.add(_Snapshot(this));
     _redoStack.removeLast().restoreTo(this);
+    _resyncSelectionAfterRestore();
     notifyListeners();
     _scheduleSave();
+  }
+
+  /// Nach Undo/Redo kann die alte Mehrfachauswahl auf inzwischen andere
+  /// Abschnitte zeigen — auf das (bereits neu validierte) primäre Element
+  /// zurücksetzen statt sie einfach zu übernehmen.
+  void _resyncSelectionAfterRestore() {
+    selection.clear();
+    final id = selectedId;
+    if (id != null) selection.add((id, selectedSectionIndex));
   }
 
   /// Nach jeder Mutation aufrufen: benachrichtigt die UI, merkt den Zustand

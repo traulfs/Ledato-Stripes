@@ -463,6 +463,19 @@ class _EditorScreenState extends State<EditorScreen>
                           },
                   ),
                   SizedBox(width: compact ? 2 : 8),
+                  IconButton(
+                    tooltip: state.multiSelectMode
+                        ? 'Mehrfachauswahl beenden'
+                        : 'Mehrfachauswahl: Tippen erweitert die Auswahl '
+                              'statt sie zu ersetzen',
+                    isSelected: state.multiSelectMode,
+                    icon: const Icon(Icons.checklist_outlined),
+                    selectedIcon: const Icon(Icons.checklist),
+                    onPressed: !state.editMode
+                        ? null
+                        : state.toggleMultiSelectMode,
+                  ),
+                  SizedBox(width: compact ? 2 : 8),
                   SegmentedButton<bool>(
                     segments: [
                       ButtonSegment(

@@ -28,11 +28,16 @@ class _StripPanelState extends State<StripPanel> {
       listenable: state,
       builder: (context, _) {
         final sel = state.selected;
+        final multi = state.selection.length > 1;
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
             _stripSelectorRow(context),
-            if (sel != null) ...[const Divider(), _stripSettings(context, sel)],
+            if (multi) ...[const Divider(), _multiSelectSettings(context)]
+            else if (sel != null) ...[
+              const Divider(),
+              _stripSettings(context, sel),
+            ],
           ],
         );
       },
@@ -70,6 +75,19 @@ class _StripPanelState extends State<StripPanel> {
                 ),
         ),
         IconButton(
+          tooltip: sel == null
+              ? 'Ganzen Stripe zur Mehrfachauswahl hinzufügen'
+              : (_wholeStripSelected(sel)
+                    ? 'Ganzen Stripe aus Mehrfachauswahl entfernen'
+                    : 'Ganzen Stripe zur Mehrfachauswahl hinzufügen'),
+          isSelected: sel != null && _wholeStripSelected(sel),
+          icon: const Icon(Icons.playlist_add_outlined),
+          selectedIcon: const Icon(Icons.playlist_add_check),
+          onPressed: sel == null || sel.sections.isEmpty
+              ? null
+              : () => _toggleWholeStrip(sel),
+        ),
+        IconButton(
           tooltip: 'Bearbeiten',
           icon: const Icon(Icons.edit_outlined),
           onPressed: sel == null ? null : () => _editStripDialog(context, sel),
@@ -94,6 +112,22 @@ class _StripPanelState extends State<StripPanel> {
         ),
       ],
     );
+  }
+
+  bool _wholeStripSelected(LedStrip s) =>
+      s.sections.isNotEmpty &&
+      List.generate(
+        s.sections.length,
+        (i) => i,
+      ).every((i) => state.selection.contains((s.id, i)));
+
+  void _toggleWholeStrip(LedStrip s) {
+    final keys = [for (var i = 0; i < s.sections.length; i++) (s.id, i)];
+    if (_wholeStripSelected(s)) {
+      state.removeRangeFromSelection(keys);
+    } else {
+      state.addRangeToSelection(keys);
+    }
   }
 
   Future<void> _editStripDialog(BuildContext context, LedStrip s) async {
@@ -380,6 +414,107 @@ class _StripPanelState extends State<StripPanel> {
           'Das Dreieck markiert den Datenanschluss (LED 1), die gestrichelte '
           'Linie zwischen Abschnitten die elektrische Verbindung. '
           'Mausrad oder Pinch zoomt, Ziehen auf freier Fläche verschiebt die Ansicht.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
+  // ---------- Einstellungen der Mehrfachauswahl ----------
+
+  /// Gemeinsame Optik-Einstellungen für alle ausgewählten Abschnitte
+  /// (stripeübergreifend) — bewusst ohne LEDs/Winkel, das bleibt pro
+  /// Abschnitt bzw. läuft über den Gruppen-Drag auf der Leinwand.
+  /// Anzeigewert je Feld kommt vom primären (zuletzt angeklickten)
+  /// Abschnitt; jede Änderung wird über [AppState.editSelection] auf die
+  /// gesamte Auswahl angewendet.
+  Widget _multiSelectSettings(BuildContext context) {
+    final primary = state.selectedSection;
+    if (primary == null) return const SizedBox.shrink();
+    final count = state.selection.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$count Elemente ausgewählt',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            TextButton(
+              onPressed: state.clearSelection,
+              child: const Text('Auswahl aufheben'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<EffectType>(
+          key: ValueKey('multi-effect-$count'),
+          initialValue: primary.effect,
+          decoration: const InputDecoration(
+            labelText: 'Effekt',
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            for (final e in EffectType.values)
+              DropdownMenuItem(value: e, child: Text(e.label)),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            state.editSelection((sec) => sec.effect = v);
+          },
+        ),
+        const SizedBox(height: 8),
+        if (!const {
+          EffectType.rainbow,
+          EffectType.fire,
+          EffectType.confetti,
+        }.contains(primary.effect)) ...[
+          ColorRow(
+            label: _usesTwoColors(primary.effect) ? 'Farbe 1' : 'Farbe',
+            color: primary.color,
+            onChanged: (c) => state.editSelection((sec) => sec.color = c),
+          ),
+          if (_usesTwoColors(primary.effect))
+            ColorRow(
+              label: 'Farbe 2',
+              color: primary.color2,
+              onChanged: (c) => state.editSelection((sec) => sec.color2 = c),
+            ),
+        ],
+        LabeledSlider(
+          label: 'Helligkeit',
+          value: primary.brightness,
+          min: 0,
+          max: 1,
+          display: '${(primary.brightness * 100).round()} %',
+          onChanged: (v) => state.editSelection((sec) => sec.brightness = v),
+        ),
+        if (primary.effect != EffectType.solid &&
+            primary.effect != EffectType.gradient)
+          LabeledSlider(
+            label: 'Tempo',
+            value: primary.speed,
+            min: 0,
+            max: 1,
+            display: '${(primary.speed * 100).round()} %',
+            onChanged: (v) => state.editSelection((sec) => sec.speed = v),
+          ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Richtung umkehren'),
+          value: primary.reversed,
+          onChanged: (v) => state.editSelection((sec) => sec.reversed = v),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Änderungen gelten für alle $count ausgewählten Abschnitte. '
+          'Ziehen an einem der markierten Startpunkte auf der Leinwand '
+          'verschiebt die gesamte Auswahl gemeinsam.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
