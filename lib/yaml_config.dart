@@ -6,51 +6,12 @@ import 'package:yaml/yaml.dart';
 import 'app_state.dart';
 import 'model.dart';
 
-/// Erzeugt eine lesbare, von Hand editierbare YAML-Konfiguration.
-///
-/// Bewusst kein generischer YAML-Writer: Das Schema ist klein und fest
-/// (globale Einstellungen + Liste von Stripes mit ihren Abschnitten), ein
-/// direkt geschriebener Text ist hier einfacher als eine generische
-/// Map/List-Serialisierung und garantiert stabile Formatierung.
-String encodeConfigYaml(AppState st) {
-  final buf = StringBuffer()
-    ..writeln('# Ledato Stripes Konfiguration')
-    ..writeln('sceneWidthMeters: ${_num(st.sceneWidthMeters)}')
-    ..writeln('sceneAspect: ${_num(st.sceneAspect)}')
-    ..writeln('useImageAspect: ${st.useImageAspect}')
-    ..writeln('backgroundPath: ${_str(st.backgroundPath)}')
-    ..writeln('backgroundDim: ${_num(st.backgroundDim)}')
-    ..writeln('glow: ${_num(st.glow)}');
-
-  if (st.strips.isEmpty) {
-    buf.writeln('strips: []');
-  } else {
-    buf.writeln('strips:');
-    for (final s in st.strips) {
-      buf
-        ..writeln('  - id: ${_str(s.id)}')
-        ..writeln('    name: ${_str(s.name)}')
-        ..writeln('    enabled: ${s.enabled}')
-        ..writeln('    ledsPerMeter: ${s.ledsPerMeter}')
-        ..writeln('    sections:');
-      for (final sec in s.sections) {
-        buf
-          ..writeln(
-            '      - start: [${_num(sec.start.dx)}, ${_num(sec.start.dy)}]',
-          )
-          ..writeln('        angleDegrees: ${_num(sec.angle * 180 / math.pi)}')
-          ..writeln('        ledCount: ${sec.ledCount}')
-          ..writeln('        effect: ${sec.effect.name}')
-          ..writeln('        color: ${_hex(sec.color)}')
-          ..writeln('        color2: ${_hex(sec.color2)}')
-          ..writeln('        brightness: ${_num(sec.brightness)}')
-          ..writeln('        speed: ${_num(sec.speed)}')
-          ..writeln('        reversed: ${sec.reversed}');
-      }
-    }
-  }
-  return buf.toString();
-}
+/// Nur noch für die einmalige Migration alter YAML-Konfigurationen
+/// gebraucht (siehe AppState._migrateLegacyYaml) — das laufende Speichern
+/// läuft seit Einführung von Pages/Player über Protobuf (proto_mapper.dart).
+/// Der Schreibpfad (encodeConfigYaml) wurde deshalb entfernt, dieser
+/// Lesepfad bleibt bestehen, damit bestehende Installationen ihre alte
+/// Konfiguration noch einmal einlesen können.
 
 /// Liest eine YAML-Konfiguration und überträgt sie auf [st] (Stripes und
 /// globale Einstellungen, ohne das Hintergrundbild selbst zu laden).
@@ -243,26 +204,6 @@ List<Offset> _pointsFromYaml(dynamic raw) {
   }
   return points;
 }
-
-// ---------- Formatierung ----------
-
-/// Zahl ohne unnötige Nachkommastellen, aber erkennbar als Dezimalzahl
-/// (z. B. "1.0", "0.5", "2.3456").
-String _num(double d) {
-  var s = d.toStringAsFixed(4);
-  s = s.replaceFirst(RegExp(r'0+$'), '');
-  if (s.endsWith('.')) s += '0';
-  return s;
-}
-
-String _str(String? s) {
-  if (s == null) return 'null';
-  final escaped = s.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-  return '"$escaped"';
-}
-
-String _hex(Color c) =>
-    '"#${c.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}"';
 
 // ---------- Parsen ----------
 

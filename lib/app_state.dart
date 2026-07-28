@@ -10,17 +10,202 @@ import 'package:path_provider/path_provider.dart';
 
 import 'ddp_server.dart';
 import 'model.dart';
+import 'proto_mapper.dart';
+import 'protobuf/ledato_stripes.pb.dart' as pb;
 import 'yaml_config.dart';
 
-/// Zentraler App-Zustand: Stripes, Hintergrundbild, globale Darstellung.
-/// Änderungen werden verzögert automatisch als YAML-Datei gespeichert.
+/// Zentraler App-Zustand: Pages (vollständige Lichtszenen) samt Player, der
+/// zwischen ihnen umschaltet. Änderungen werden verzögert automatisch als
+/// Protobuf-Datei gespeichert.
 /// Ein Abschnitt in der Mehrfachauswahl: Stripe-ID + Abschnitt-Index. Ein
 /// ganzer ausgewählter Stripe ist einfach die Menge aller seiner Indizes,
 /// dafür gibt es keinen eigenen Fall.
 typedef SelectionKey = (String stripId, int sectionIndex);
 
 class AppState extends ChangeNotifier {
-  final List<LedStrip> strips = [];
+  /// Alle Lichtszenen (Pages) und die Page, die gerade bearbeitet/angezeigt
+  /// wird. Sämtliche bisherigen Einzelfelder für „die“ Szene (Stripes,
+  /// Maßstab, Hintergrund, …) sind jetzt Getter/Setter, die auf
+  /// [activePage] delegieren — Canvas, Panel, DDP-Server etc. merken davon
+  /// nichts und brauchen keine Änderung.
+  List<LedPage> pages = [
+    LedPage(id: DateTime.now().microsecondsSinceEpoch.toString(), name: 'Page 1'),
+  ];
+  int activePageIndex = 0;
+
+  LedPage get activePage => pages[activePageIndex.clamp(0, pages.length - 1)];
+
+  List<LedStrip> get strips => activePage.strips;
+
+  String? get backgroundPath => activePage.backgroundPath;
+  set backgroundPath(String? v) => activePage.backgroundPath = v;
+
+  double get backgroundDim => activePage.backgroundDim;
+  set backgroundDim(double v) => activePage.backgroundDim = v;
+
+  double get glow => activePage.glow;
+  set glow(double v) => activePage.glow = v;
+
+  /// Metrischer Maßstab: reale Breite des Bildbereichs in Metern.
+  double get sceneWidthMeters => activePage.sceneWidthMeters;
+  set sceneWidthMeters(double v) => activePage.sceneWidthMeters = v;
+
+  /// Seitenverhältnis (Höhe/Breite) des Bildbereichs, wenn es nicht aus dem
+  /// Hintergrundbild übernommen wird (siehe [useImageAspect]).
+  double get sceneAspect => activePage.sceneAspect;
+  set sceneAspect(double v) => activePage.sceneAspect = v;
+
+  /// Mit Hintergrundbild: ob das Seitenverhältnis aus dessen realen
+  /// Pixelmaßen übernommen wird (true, Standard) oder stattdessen frei über
+  /// [sceneAspect] eingestellt werden kann (false).
+  bool get useImageAspect => activePage.useImageAspect;
+  set useImageAspect(bool v) => activePage.useImageAspect = v;
+
+  // ---------- Pages ----------
+
+  /// Wählt eine andere Page als aktive Szene: leert Auswahl und den
+  /// (bewusst pro Page geführten) Undo-Verlauf und lädt deren
+  /// Hintergrundbild neu.
+  Future<void> setActivePage(int index) async {
+    if (pages.isEmpty) return;
+    activePageIndex = index.clamp(0, pages.length - 1);
+    pageElapsedMs = 0;
+    selection.clear();
+    selectedId = null;
+    selectedSectionIndex = 0;
+    _undoStack.clear();
+    _redoStack.clear();
+    _pendingUndo = null;
+    _undoCoalesceTimer?.cancel();
+    await _reloadActiveBackground();
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  Future<void> _reloadActiveBackground() async {
+    final path = activePage.backgroundPath;
+    if (path == null) {
+      background = null;
+      return;
+    }
+    try {
+      final file = File(path);
+      background = await file.exists()
+          ? await decodeImageFromList(await file.readAsBytes())
+          : null;
+    } catch (_) {
+      background = null;
+    }
+  }
+
+  LedPage _copyPage(LedPage src, String name) {
+    final copy = src.clone();
+    return LedPage(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: name,
+      durationMs: copy.durationMs,
+      sceneWidthMeters: copy.sceneWidthMeters,
+      sceneAspect: copy.sceneAspect,
+      useImageAspect: copy.useImageAspect,
+      backgroundPath: copy.backgroundPath,
+      backgroundDim: copy.backgroundDim,
+      glow: copy.glow,
+      strips: copy.strips,
+    );
+  }
+
+  /// Dupliziert die aktuell aktive Page als Vorlage für eine neue, hängt
+  /// sie an und aktiviert sie.
+  Future<LedPage> addPage() async {
+    final page = _copyPage(activePage, 'Page ${pages.length + 1}');
+    pages.add(page);
+    await setActivePage(pages.length - 1);
+    return page;
+  }
+
+  Future<void> duplicatePage(int index) async {
+    if (index < 0 || index >= pages.length) return;
+    final page = _copyPage(pages[index], '${pages[index].name} Kopie');
+    pages.insert(index + 1, page);
+    await setActivePage(index + 1);
+  }
+
+  /// Entfernt eine Page (mindestens eine muss erhalten bleiben).
+  Future<void> removePage(int index) async {
+    if (pages.length <= 1 || index < 0 || index >= pages.length) return;
+    pages.removeAt(index);
+    final newActive = activePageIndex > index
+        ? activePageIndex - 1
+        : activePageIndex;
+    await setActivePage(newActive.clamp(0, pages.length - 1));
+  }
+
+  /// Verschiebt eine Page von [from] nach [to] (beide bereits die
+  /// Ziel-Indizes nach dem Entfernen, wie z. B. `ReorderableListView`
+  /// sie nach Anpassung des klassischen Off-by-one liefert).
+  void reorderPage(int from, int to) {
+    if (from < 0 ||
+        from >= pages.length ||
+        to < 0 ||
+        to >= pages.length ||
+        from == to) {
+      return;
+    }
+    final page = pages.removeAt(from);
+    pages.insert(to, page);
+    if (activePageIndex == from) {
+      activePageIndex = to;
+    } else if (from < activePageIndex && to >= activePageIndex) {
+      activePageIndex -= 1;
+    } else if (from > activePageIndex && to <= activePageIndex) {
+      activePageIndex += 1;
+    }
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  void renamePage(LedPage page, String name) {
+    page.name = name;
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  void setPageDuration(LedPage page, int ms) {
+    page.durationMs = ms.clamp(200, 3600000);
+    notifyListeners();
+    _scheduleSave();
+  }
+
+  // ---------- Player ----------
+  //
+  // Schaltet Pages automatisch nach ihrer jeweiligen Anzeigedauer weiter.
+  // Läuft über denselben Ticker, der schon die Effekt-Simulation treibt
+  // (siehe EditorScreen in main.dart) — kein zusätzlicher Timer nötig.
+
+  bool playing = false;
+  double pageElapsedMs = 0;
+
+  void togglePlaying() {
+    playing = !playing;
+    notifyListeners();
+  }
+
+  Future<void> nextPage() =>
+      setActivePage((activePageIndex + 1) % pages.length);
+
+  Future<void> prevPage() =>
+      setActivePage((activePageIndex - 1 + pages.length) % pages.length);
+
+  /// Von main.dart einmal pro Frame aufgerufen.
+  void tickPlayer(double dtSeconds) {
+    if (!playing || pages.length <= 1) return;
+    pageElapsedMs += dtSeconds * 1000;
+    if (pageElapsedMs >= activePage.durationMs) {
+      pageElapsedMs = 0;
+      nextPage();
+    }
+  }
+
   String? selectedId;
   int selectedSectionIndex = 0;
 
@@ -115,30 +300,7 @@ class AppState extends ChangeNotifier {
     return ov.colors[globalIndex];
   }
 
-  ui.Image? background;
-  String? backgroundPath;
-  double backgroundDim = 0.5; // Abdunklung des Hintergrunds 0..1
-  double glow = 1.0; // Stärke des Leuchtscheins 0..2
-
-  /// Metrischer Maßstab: reale Breite des Bildbereichs in Metern.
-  double sceneWidthMeters = 5.0;
-
-  /// Seitenverhältnis (Höhe/Breite) des Bildbereichs, wenn es nicht aus dem
-  /// Hintergrundbild übernommen wird (siehe [useImageAspect]). Ohne Bild wäre
-  /// der Bildbereich sonst genauso groß wie das Leinwand-Widget — und damit
-  /// von Fenster- bzw. Bildschirmform des jeweiligen Geräts abhängig:
-  /// dieselbe Konfiguration sähe auf einem breiten Mac-Fenster und einem
-  /// hochkantigen Handy-Display völlig unterschiedlich aus (Winkel und
-  /// Abstände werden relativ zu diesem Seitenverhältnis interpretiert).
-  /// Deshalb wird dieser Wert gespeichert und genutzt, statt ihn live aus der
-  /// Fenstergröße abzuleiten.
-  double sceneAspect = 0.6;
-
-  /// Mit Hintergrundbild: ob das Seitenverhältnis aus dessen realen
-  /// Pixelmaßen übernommen wird (true, Standard) oder stattdessen frei über
-  /// [sceneAspect] eingestellt werden kann (false) — das Bild wird dann auf
-  /// den abweichenden Bildbereich gestreckt.
-  bool useImageAspect = true;
+  ui.Image? background; // entschlüsseltes Bild der aktiven Page (Laufzeit)
 
   /// Tatsächlich für die Winkel-/Längen-Umrechnung verwendetes
   /// Seitenverhältnis (Höhe/Breite) — wird von der Leinwand beim Layout
@@ -494,8 +656,19 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------- Persistenz ----------
+  //
+  // Gespeichert wird als rohe Protobuf-Bytes (siehe proto_mapper.dart),
+  // keine Hülle/Versionsrahmen nötig — die Version steckt im Dokument
+  // selbst ([kSchemaVersion]). Bestehende alte Konfigurationen (YAML, davor
+  // JSON) werden beim ersten Start einmalig eingelesen, als einzelne Page
+  // übernommen und sofort im neuen Format zurückgeschrieben.
 
   Future<File> _configFile() async {
+    final dir = await getApplicationSupportDirectory();
+    return File('${dir.path}/ledato_stripes_config.ledato');
+  }
+
+  Future<File> _legacyYamlFile() async {
     final dir = await getApplicationSupportDirectory();
     return File('${dir.path}/ledato_stripes_config.yaml');
   }
@@ -508,44 +681,69 @@ class AppState extends ChangeNotifier {
   Future<void> save() async {
     if (kIsWeb) return;
     final file = await _configFile();
-    await file.writeAsString(encodeConfigYaml(this));
+    await file.writeAsBytes(documentToProto(pages, activePageIndex).writeToBuffer());
   }
 
   Future<void> load() async {
+    // Immer mindestens eine Page, bevor irgendein Migrations-/Ladepfad auf
+    // die (auf activePage delegierten) Felder zugreift.
+    pages = [
+      LedPage(id: DateTime.now().microsecondsSinceEpoch.toString(), name: 'Page 1'),
+    ];
+    activePageIndex = 0;
     try {
       if (!kIsWeb) {
-        var file = await _configFile();
-        if (!await file.exists()) {
-          await _migrateLegacyJsonIfPresent();
-          file = await _configFile();
-        }
+        final file = await _configFile();
         if (await file.exists()) {
-          await _loadFromYamlFile(file);
+          await _loadFromProtoFile(file);
+        } else {
+          final yamlFile = await _legacyYamlFile();
+          final jsonFile = await _legacyJsonFile();
+          if (await yamlFile.exists()) {
+            await _migrateLegacyYaml(yamlFile);
+          } else if (await jsonFile.exists()) {
+            await _migrateLegacyJson(jsonFile);
+          }
         }
       }
     } catch (e) {
       debugPrint('Konfiguration konnte nicht geladen werden: $e');
     }
+    if (pages.isEmpty) {
+      pages.add(
+        LedPage(id: DateTime.now().microsecondsSinceEpoch.toString(), name: 'Page 1'),
+      );
+    }
+    if (activePageIndex >= pages.length) activePageIndex = 0;
     if (strips.isEmpty) addStrip();
+    await _reloadActiveBackground();
     _loaded = true;
     notifyListeners();
   }
 
-  Future<void> _loadFromYamlFile(File file) async {
+  Future<void> _loadFromProtoFile(File file) async {
+    final doc = pb.Document.fromBuffer(await file.readAsBytes());
+    final result = documentFromProto(doc);
+    pages
+      ..clear()
+      ..addAll(result.pages);
+    activePageIndex = result.activePageIndex;
+  }
+
+  /// Liest eine alte YAML-Konfiguration einmalig ein (als einzige Page) und
+  /// speichert sie sofort im neuen Protobuf-Format weiter.
+  Future<void> _migrateLegacyYaml(File file) async {
     final path = applyConfigYaml(this, await file.readAsString());
     if (path != null && await File(path).exists()) {
       await setBackgroundBytes(await File(path).readAsBytes(), path);
     }
+    await save();
   }
 
-  /// Liest eine Konfiguration im alten JSON-Format einmalig ein und
-  /// speichert sie sofort im neuen YAML-Format weiter, damit bestehende
-  /// Konfigurationen den Formatwechsel überstehen.
-  Future<void> _migrateLegacyJsonIfPresent() async {
-    final legacy = await _legacyJsonFile();
-    if (!await legacy.exists()) return;
-    final data =
-        jsonDecode(await legacy.readAsString()) as Map<String, dynamic>;
+  /// Liest eine uralte JSON-Konfiguration (vor Einführung von YAML)
+  /// einmalig ein und speichert sie sofort im neuen Protobuf-Format weiter.
+  Future<void> _migrateLegacyJson(File file) async {
+    final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
     strips
       ..clear()
       ..addAll(
@@ -560,23 +758,31 @@ class AppState extends ChangeNotifier {
     if (path != null && await File(path).exists()) {
       await setBackgroundBytes(await File(path).readAsBytes(), path);
     }
-    final file = await _configFile();
-    await file.writeAsString(encodeConfigYaml(this));
+    await save();
   }
 
-  // ---------- Export / Import (YAML-Datei nach Wahl des Nutzers) ----------
+  // ---------- Export / Import (Protobuf-Datei nach Wahl des Nutzers) ----------
 
-  String exportYamlText() => encodeConfigYaml(this);
+  Uint8List exportBytes() =>
+      Uint8List.fromList(documentToProto(pages, activePageIndex).writeToBuffer());
 
-  Future<void> importYamlText(String text) async {
-    final path = applyConfigYaml(this, text);
-    background = null;
-    backgroundPath = null;
-    if (path != null && await File(path).exists()) {
-      await setBackgroundBytes(await File(path).readAsBytes(), path);
-    } else {
-      changed();
+  Future<void> importBytes(Uint8List bytes) async {
+    final doc = pb.Document.fromBuffer(bytes);
+    final result = documentFromProto(doc);
+    pages
+      ..clear()
+      ..addAll(result.pages);
+    if (pages.isEmpty) {
+      pages.add(
+        LedPage(id: DateTime.now().microsecondsSinceEpoch.toString(), name: 'Page 1'),
+      );
     }
+    activePageIndex = result.activePageIndex.clamp(0, pages.length - 1);
+    selection.clear();
+    selectedId = null;
+    selectedSectionIndex = 0;
+    await _reloadActiveBackground();
+    changed();
   }
 
   @override

@@ -4,10 +4,22 @@ import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ledato_stripes/app_state.dart';
 import 'package:ledato_stripes/model.dart';
+import 'package:ledato_stripes/proto_mapper.dart';
+import 'package:ledato_stripes/protobuf/ledato_stripes.pb.dart' as pb;
 import 'package:ledato_stripes/yaml_config.dart';
 
+/// Baut aus [pages]/[activePageIndex] rohe Protobuf-Bytes und liest sie
+/// direkt wieder ein — simuliert genau das, was AppState.save()/load() tun.
+({List<LedPage> pages, int activePageIndex}) _roundtrip(
+  List<LedPage> pages,
+  int activePageIndex,
+) {
+  final bytes = documentToProto(pages, activePageIndex).writeToBuffer();
+  return documentFromProto(pb.Document.fromBuffer(bytes));
+}
+
 void main() {
-  test('YAML-Konfiguration: Export und Import ergeben denselben Zustand', () {
+  test('Protobuf: Export und Import ergeben denselben Zustand', () {
     final st = AppState();
     st.sceneWidthMeters = 4.5;
     st.sceneAspect = 0.8;
@@ -26,16 +38,14 @@ void main() {
       ),
     );
 
-    final yaml = encodeConfigYaml(st);
-
-    final st2 = AppState();
-    final bgPath = applyConfigYaml(st2, yaml);
+    final result = _roundtrip(st.pages, st.activePageIndex);
+    final page2 = result.pages.first;
     final s1 = st.strips.first;
-    final s2 = st2.strips.first;
+    final s2 = page2.strips.first;
 
-    expect(bgPath, isNull);
-    expect(st2.sceneWidthMeters, closeTo(st.sceneWidthMeters, 1e-6));
-    expect(st2.sceneAspect, closeTo(st.sceneAspect, 1e-6));
+    expect(page2.backgroundPath, isNull);
+    expect(page2.sceneWidthMeters, closeTo(st.sceneWidthMeters, 1e-6));
+    expect(page2.sceneAspect, closeTo(st.sceneAspect, 1e-6));
     expect(s2.name, s1.name);
     expect(
       s2.sections.first.color.toARGB32(),
@@ -87,25 +97,21 @@ void main() {
       expect((endM - startM).distance, closeTo(target, 1e-6));
     }
 
-    final yaml = encodeConfigYaml(st);
-    final st2 = AppState()
-      ..sceneWidthMeters = st.sceneWidthMeters
-      ..contentAspect = st.contentAspect;
-    applyConfigYaml(st2, yaml);
-    final restored = st2.strips.first;
+    final result = _roundtrip(st.pages, st.activePageIndex);
+    final restored = result.pages.first.strips.first;
     expect(restored.sections.length, 2);
     expect(
-      st2.sectionTargetLengthMeters(restored, restored.sections[0]),
+      st.sectionTargetLengthMeters(restored, restored.sections[0]),
       closeTo(st.sectionTargetLengthMeters(strip, strip.sections[0]), 1e-6),
     );
     expect(
-      st2.sectionTargetLengthMeters(restored, restored.sections[1]),
+      st.sectionTargetLengthMeters(restored, restored.sections[1]),
       closeTo(st.sectionTargetLengthMeters(strip, strip.sections[1]), 1e-6),
     );
   });
 
   test('Jeder Abschnitt behält seine eigene Optik (Effekt, Farbe, Tempo, '
-      'Richtung) auch nach YAML-Roundtrip', () {
+      'Richtung) auch nach Protobuf-Roundtrip', () {
     final st = AppState();
     final strip = LedStrip(
       id: 'fx',
@@ -132,10 +138,8 @@ void main() {
     expect(strip.sections[0].effect, EffectType.fire);
     expect(strip.sections[1].effect, EffectType.rainbow);
 
-    final yaml = encodeConfigYaml(st);
-    final st2 = AppState();
-    applyConfigYaml(st2, yaml);
-    final restored = st2.strips.first;
+    final result = _roundtrip(st.pages, st.activePageIndex);
+    final restored = result.pages.first.strips.first;
     expect(restored.sections[0].effect, EffectType.fire);
     expect(restored.sections[1].effect, EffectType.rainbow);
     expect(
@@ -150,5 +154,28 @@ void main() {
     expect(restored.sections[1].speed, closeTo(0.2, 1e-6));
     expect(restored.sections[0].reversed, isTrue);
     expect(restored.sections[1].reversed, isFalse);
+  });
+
+  test('Alte YAML-Konfiguration wird noch für die Migration eingelesen', () {
+    const yaml = '''
+sceneWidthMeters: 3.0
+sceneAspect: 0.5
+strips:
+  - id: "legacy"
+    name: "Alter Stripe"
+    ledsPerMeter: 60
+    sections:
+      - start: [0.2, 0.3]
+        angleDegrees: 90.0
+        ledCount: 30
+        effect: rainbow
+        color: "#FFAABBCC"
+''';
+    final st = AppState();
+    final path = applyConfigYaml(st, yaml);
+    expect(path, isNull);
+    expect(st.sceneWidthMeters, closeTo(3.0, 1e-6));
+    expect(st.strips.single.name, 'Alter Stripe');
+    expect(st.strips.single.sections.single.effect, EffectType.rainbow);
   });
 }

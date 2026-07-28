@@ -163,3 +163,46 @@ class LedStrip {
     );
   }
 }
+
+/// Eine vollständige, eigenständige Lichtszene: Stripes samt Hintergrund,
+/// Maßstab und Darstellungseinstellungen. Der Player (siehe [AppState])
+/// schaltet zwischen Pages um, jede mit ihrer eigenen Anzeigedauer.
+class LedPage {
+  LedPage({
+    required this.id,
+    required this.name,
+    this.durationMs = 5000,
+    this.sceneWidthMeters = 5.0,
+    this.sceneAspect = 0.6,
+    this.useImageAspect = true,
+    this.backgroundPath,
+    this.backgroundDim = 0.5,
+    this.glow = 1.0,
+    List<LedStrip>? strips,
+  }) : strips = strips ?? [];
+
+  final String id;
+  String name;
+  int durationMs; // Anzeigedauer im Player, in Millisekunden
+  double sceneWidthMeters;
+  double sceneAspect;
+  bool useImageAspect;
+  String? backgroundPath;
+  double backgroundDim;
+  double glow;
+  List<LedStrip> strips;
+
+  /// Tiefe Kopie für Undo/Redo-Schnappschüsse.
+  LedPage clone() => LedPage(
+    id: id,
+    name: name,
+    durationMs: durationMs,
+    sceneWidthMeters: sceneWidthMeters,
+    sceneAspect: sceneAspect,
+    useImageAspect: useImageAspect,
+    backgroundPath: backgroundPath,
+    backgroundDim: backgroundDim,
+    glow: glow,
+    strips: [for (final s in strips) s.clone()],
+  );
+}

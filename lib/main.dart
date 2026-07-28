@@ -12,6 +12,7 @@ import 'app_state.dart';
 import 'editor_canvas.dart';
 import 'labeled_slider.dart';
 import 'model.dart';
+import 'pages_screen.dart';
 import 'strip_panel.dart';
 
 void main() {
@@ -24,6 +25,8 @@ enum _FileAction {
   exportConfig,
   importConfig,
   sceneWidth,
+  managePages,
+  toggleGrid,
   ddpServer,
 }
 
@@ -58,13 +61,18 @@ class _EditorScreenState extends State<EditorScreen>
   final AppState state = AppState();
   final ValueNotifier<double> time = ValueNotifier(0);
   late final Ticker _ticker;
+  double _lastTickerSeconds = 0;
 
   @override
   void initState() {
     super.initState();
     state.load();
     _ticker = createTicker((elapsed) {
-      if (state.simulate) time.value = elapsed.inMicroseconds / 1e6;
+      final seconds = elapsed.inMicroseconds / 1e6;
+      final dt = seconds - _lastTickerSeconds;
+      _lastTickerSeconds = seconds;
+      if (state.simulate) time.value = seconds;
+      state.tickPlayer(dt);
     })..start();
   }
 
@@ -85,10 +93,13 @@ class _EditorScreenState extends State<EditorScreen>
     uniformTypeIdentifiers: ['public.image'],
   );
 
-  static const _yamlTypeGroup = XTypeGroup(
-    label: 'YAML',
-    extensions: ['yaml', 'yml'],
-    uniformTypeIdentifiers: ['public.yaml'],
+  static const _ledatoTypeGroup = XTypeGroup(
+    label: 'Ledato Stripes Konfiguration',
+    extensions: ['ledato'],
+    // Kein eigener UTI für die App deklariert — generisches Binärformat als
+    // Fallback, damit iOS den Öffnen-Dialog nicht mit ArgumentError verweigert
+    // (siehe Kommentar bei _imageTypeGroup).
+    uniformTypeIdentifiers: ['public.data'],
   );
 
   Future<void> _pickBackground() async {
@@ -107,12 +118,12 @@ class _EditorScreenState extends State<EditorScreen>
   /// dort wird stattdessen der native Teilen-Dialog genutzt, über den sich
   /// die Datei z. B. per "In Dateien sichern" ablegen lässt.
   Future<void> _exportConfig() async {
-    final text = state.exportYamlText();
+    final bytes = state.exportBytes();
     try {
       if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
         final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/ledato_stripes_config.yaml');
-        await file.writeAsString(text);
+        final file = File('${dir.path}/ledato_stripes_config.ledato');
+        await file.writeAsBytes(bytes);
         await SharePlus.instance.share(
           ShareParams(
             files: [XFile(file.path)],
@@ -122,16 +133,15 @@ class _EditorScreenState extends State<EditorScreen>
         return;
       }
       final location = await getSaveLocation(
-        suggestedName: 'ledato_stripes_config.yaml',
-        acceptedTypeGroups: const [_yamlTypeGroup],
+        suggestedName: 'ledato_stripes_config.ledato',
+        acceptedTypeGroups: [_ledatoTypeGroup],
       );
       if (location == null) return;
       var path = location.path;
-      final lower = path.toLowerCase();
-      if (!lower.endsWith('.yaml') && !lower.endsWith('.yml')) {
-        path = '$path.yaml';
+      if (!path.toLowerCase().endsWith('.ledato')) {
+        path = '$path.ledato';
       }
-      await File(path).writeAsString(text);
+      await File(path).writeAsBytes(bytes);
     } catch (e) {
       _showError('Konfiguration konnte nicht gespeichert werden: $e');
     }
@@ -139,11 +149,11 @@ class _EditorScreenState extends State<EditorScreen>
 
   Future<void> _importConfig() async {
     try {
-      final file = await openFile(acceptedTypeGroups: const [_yamlTypeGroup]);
+      final file = await openFile(acceptedTypeGroups: [_ledatoTypeGroup]);
       if (file == null) return;
-      await state.importYamlText(await file.readAsString());
+      await state.importBytes(await file.readAsBytes());
     } catch (e) {
-      _showError('YAML konnte nicht geladen werden: $e');
+      _showError('Konfiguration konnte nicht geladen werden: $e');
     }
   }
 
@@ -239,6 +249,52 @@ class _EditorScreenState extends State<EditorScreen>
         ),
       ),
     );
+  }
+
+  /// Kompakte Transportleiste unter der App-Leiste: Play/Pause, Zurück/
+  /// Weiter und Name+Index der aktiven Page — nur sichtbar, wenn es
+  /// überhaupt mehrere Pages gibt.
+  Widget _playerBar() {
+    if (state.pages.length <= 1) return const SizedBox.shrink();
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          children: [
+            IconButton(
+              tooltip: state.playing ? 'Player pausieren' : 'Player starten',
+              icon: Icon(state.playing ? Icons.pause : Icons.play_arrow),
+              onPressed: state.togglePlaying,
+            ),
+            IconButton(
+              tooltip: 'Vorherige Page',
+              icon: const Icon(Icons.skip_previous),
+              onPressed: state.prevPage,
+            ),
+            IconButton(
+              tooltip: 'Nächste Page',
+              icon: const Icon(Icons.skip_next),
+              onPressed: state.nextPage,
+            ),
+            Expanded(
+              child: Text(
+                '${state.activePage.name}  '
+                '(${state.activePageIndex + 1}/${state.pages.length})',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPagesScreen() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => PagesScreen(state: state)));
   }
 
   Future<void> _showSceneWidthDialog() async {
@@ -359,6 +415,12 @@ class _EditorScreenState extends State<EditorScreen>
               appBar: AppBar(
                 title: const Text('Ledato Stripes'),
                 actions: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                   IconButton(
                     tooltip: 'Rückgängig',
                     icon: const Icon(Icons.undo),
@@ -385,6 +447,11 @@ class _EditorScreenState extends State<EditorScreen>
                           _importConfig();
                         case _FileAction.sceneWidth:
                           _showSceneWidthDialog();
+                        case _FileAction.managePages:
+                          _openPagesScreen();
+                        case _FileAction.toggleGrid:
+                          state.showLedGrid = !state.showLedGrid;
+                          state.changed();
                         case _FileAction.ddpServer:
                           _showDdpDialog();
                       }
@@ -410,14 +477,14 @@ class _EditorScreenState extends State<EditorScreen>
                         value: _FileAction.exportConfig,
                         child: ListTile(
                           leading: Icon(Icons.save_outlined),
-                          title: Text('Konfiguration als YAML speichern'),
+                          title: Text('Konfiguration speichern'),
                         ),
                       ),
                       const PopupMenuItem(
                         value: _FileAction.importConfig,
                         child: ListTile(
                           leading: Icon(Icons.file_open_outlined),
-                          title: Text('Konfiguration aus YAML laden'),
+                          title: Text('Konfiguration laden'),
                         ),
                       ),
                       const PopupMenuDivider(),
@@ -426,6 +493,30 @@ class _EditorScreenState extends State<EditorScreen>
                         child: ListTile(
                           leading: Icon(Icons.straighten_outlined),
                           title: Text('Maßstab (Bildbreite)'),
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _FileAction.managePages,
+                        child: ListTile(
+                          leading: Icon(Icons.auto_awesome_motion_outlined),
+                          title: Text('Seiten verwalten'),
+                        ),
+                      ),
+                      PopupMenuItem(
+                        enabled: state.editMode,
+                        value: _FileAction.toggleGrid,
+                        child: ListTile(
+                          leading: Icon(
+                            state.showLedGrid
+                                ? Icons.grid_on
+                                : Icons.grid_off,
+                          ),
+                          title: const Text('Ausrichtungsraster'),
+                          subtitle: Text(
+                            state.showLedGrid
+                                ? 'Sichtbar · $kGridLedsPerMeter LEDs/m'
+                                : 'Ausgeblendet',
+                          ),
                         ),
                       ),
                       const PopupMenuDivider(),
@@ -446,21 +537,6 @@ class _EditorScreenState extends State<EditorScreen>
                         ),
                       ),
                     ],
-                  ),
-                  SizedBox(width: compact ? 2 : 8),
-                  IconButton(
-                    tooltip: state.showLedGrid
-                        ? 'Raster ausblenden'
-                        : 'Raster anzeigen ($kGridLedsPerMeter LEDs/m)',
-                    icon: Icon(
-                      state.showLedGrid ? Icons.grid_on : Icons.grid_off,
-                    ),
-                    onPressed: !state.editMode
-                        ? null
-                        : () {
-                            state.showLedGrid = !state.showLedGrid;
-                            state.changed();
-                          },
                   ),
                   SizedBox(width: compact ? 2 : 8),
                   IconButton(
@@ -508,20 +584,31 @@ class _EditorScreenState extends State<EditorScreen>
                     },
                   ),
                   SizedBox(width: compact ? 2 : 8),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
               endDrawer: wide
                   ? null
                   : Drawer(width: 340, child: SafeArea(child: panel)),
-              body: wide
-                  ? Row(
-                      children: [
-                        Expanded(child: canvas),
-                        const VerticalDivider(width: 1),
-                        SizedBox(width: 360, child: panel),
-                      ],
-                    )
-                  : canvas,
+              body: Column(
+                children: [
+                  _playerBar(),
+                  Expanded(
+                    child: wide
+                        ? Row(
+                            children: [
+                              Expanded(child: canvas),
+                              const VerticalDivider(width: 1),
+                              SizedBox(width: 360, child: panel),
+                            ],
+                          )
+                        : canvas,
+                  ),
+                ],
+              ),
               floatingActionButton: wide
                   ? null
                   : Builder(

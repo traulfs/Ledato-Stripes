@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package ledato_stripes;
+
+// Speicherformat für Ledato Stripes: eine Konfiguration besteht aus einer
+// oder mehreren vollständigen Lichtszenen (Pages), zwischen denen der
+// Player umschaltet. Farben werden verlustfrei als ARGB-uint32
+// gespeichert (Color.toARGB32()), nicht als 1-Byte-Palette.
+
+message Document {
+  uint32 schema_version = 1;
+  repeated Page pages = 2;
+  uint32 active_page_index = 3;
+}
+
+message Page {
+  string id = 1;
+  string name = 2;
+  uint32 duration_ms = 3;
+  double scene_width_meters = 4;
+  double scene_aspect = 5;
+  bool use_image_aspect = 6;
+  string background_path = 7;
+  double background_dim = 8;
+  double glow = 9;
+  repeated Strip strips = 10;
+}
+
+message Strip {
+  string id = 1;
+  string name = 2;
+  uint32 leds_per_meter = 3;
+  bool enabled = 4;
+  repeated Section sections = 5;
+}
+
+message Section {
+  double start_x = 1;
+  double start_y = 2;
+  double angle = 3;
+  uint32 led_count = 4;
+  Effect effect = 5;
+  uint32 color = 6;
+  uint32 color2 = 7;
+  double brightness = 8;
+  double speed = 9;
+  bool reversed = 10;
+}
+
+enum Effect {
+  EFFECT_SOLID = 0;
+  EFFECT_GRADIENT = 1;
+  EFFECT_RAINBOW = 2;
+  EFFECT_CHASE = 3;
+  EFFECT_THEATER = 4;
+  EFFECT_SCANNER = 5;
+  EFFECT_COLOR_WIPE = 6;
+  EFFECT_WAVE = 7;
+  EFFECT_BREATHE = 8;
+  EFFECT_BLINK = 9;
+  EFFECT_STROBE = 10;
+  EFFECT_SPARKLE = 11;
+  EFFECT_CONFETTI = 12;
+  EFFECT_FIRE = 13;
+}
