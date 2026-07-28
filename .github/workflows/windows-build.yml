@@ -25,6 +25,21 @@ jobs:
 
       - run: flutter build windows --release
 
+      - name: Bundle VC++ runtime DLLs
+        shell: powershell
+        run: |
+          $dlls = @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")
+          foreach ($dll in $dlls) {
+            $found = Get-ChildItem -Path "C:\Windows\System32" -Filter $dll -ErrorAction SilentlyContinue
+            if ($found) {
+              Copy-Item $found.FullName -Destination "build/windows/x64/runner/Release/"
+              Write-Host "Copied $dll"
+            } else {
+              Write-Error "Could not find $dll on the runner"
+              exit 1
+            }
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: ledato-stripes-windows
