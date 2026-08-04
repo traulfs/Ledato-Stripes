@@ -184,12 +184,20 @@ def main() -> None:
     parser.add_argument("--duration", type=float, help="Laufzeit in Sekunden (Standard: unbegrenzt, Strg+C zum Beenden)")
     args = parser.parse_args()
 
-    if args.time:
-        t0 = datetime.strptime(args.time, "%H:%M:%S")
-        sim_start_seconds = t0.hour * 3600 + t0.minute * 60 + t0.second
-    else:
-        now = datetime.now()
-        sim_start_seconds = now.hour * 3600 + now.minute * 60 + now.second
+    # Ohne --time/--speed-Overrides läuft die Uhr im echten Wanduhrzeit-Modus:
+    # jeder Frame fragt datetime.now() direkt ab, statt eine Simulation ab
+    # einem Startzeitpunkt fortzuschreiben. Grund: time.monotonic() zählt auf
+    # macOS NICHT weiter, während der Rechner schläft (Deckel zu, Display-
+    # Sleep) — die Wanduhrzeit aber schon. Eine auf monotonic() basierende
+    # Simulation würde nach jeder Schlafphase entsprechend hinterherhängen.
+    simulate = args.time is not None or args.speed != 1.0
+    if simulate:
+        if args.time:
+            t0 = datetime.strptime(args.time, "%H:%M:%S")
+            sim_start_seconds = t0.hour * 3600 + t0.minute * 60 + t0.second
+        else:
+            now = datetime.now()
+            sim_start_seconds = now.hour * 3600 + now.minute * 60 + now.second
 
     print(f"Ziel: {args.host}:{args.port}")
     print(
@@ -206,11 +214,17 @@ def main() -> None:
     try:
         while args.duration is None or time.monotonic() - start < args.duration:
             frame_start = time.monotonic()
-            elapsed_sim = (frame_start - start) * args.speed
-            total_seconds = int(sim_start_seconds + elapsed_sim) % 86400
-            hour = (total_seconds // 3600) % 12
-            minute = (total_seconds // 60) % 60
-            second = total_seconds % 60
+            if simulate:
+                elapsed_sim = (frame_start - start) * args.speed
+                total_seconds = int(sim_start_seconds + elapsed_sim) % 86400
+                hour = (total_seconds // 3600) % 12
+                minute = (total_seconds // 60) % 60
+                second = total_seconds % 60
+            else:
+                now = datetime.now()
+                hour = now.hour % 12
+                minute = now.minute
+                second = now.second
 
             # Minute/Sekunde als Position auf dem kombinierten 60er-Ring
             # (Stripe 2 + Speichenspitzen von Stripe 1) — Reihenfolge =
