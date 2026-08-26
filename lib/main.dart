@@ -26,6 +26,7 @@ enum _FileAction {
   exportConfig,
   importConfig,
   sceneWidth,
+  createMatrix,
   managePages,
   toggleGrid,
   ddpServer,
@@ -327,6 +328,137 @@ class _EditorScreenState extends State<EditorScreen>
     ).push(MaterialPageRoute(builder: (_) => PagesScreen(state: state)));
   }
 
+  Future<void> _showMatrixDialog() async {
+    var columns = 16;
+    var rows = 8;
+    var stripCount = 1;
+    var ledsPerMeter = state.selected?.ledsPerMeter ?? 60;
+
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) {
+          final error = state.matrixError(
+            columns: columns,
+            rows: rows,
+            stripCount: stripCount,
+          );
+          final pitch = 1 / ledsPerMeter;
+          final widthM = (columns - 1) * pitch;
+          final heightM = (rows - 1) * pitch;
+
+          return AlertDialog(
+            title: const Text('LED-Matrix erstellen'),
+            content: SizedBox(
+              width: 360,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  LabeledSlider(
+                    label: 'Spalten',
+                    value: columns.toDouble(),
+                    min: 1,
+                    max: kMaxLedsPerStrip.toDouble(),
+                    numberEntry: true,
+                    display: '$columns',
+                    onChanged: (v) => setLocal(() => columns = v.round()),
+                  ),
+                  LabeledSlider(
+                    label: 'Zeilen',
+                    value: rows.toDouble(),
+                    min: 1,
+                    max: 64,
+                    numberEntry: true,
+                    display: '$rows',
+                    onChanged: (v) => setLocal(() => rows = v.round()),
+                  ),
+                  LabeledSlider(
+                    label: 'Stripes',
+                    value: stripCount.toDouble(),
+                    min: 1,
+                    max: kMaxStrips.toDouble(),
+                    divisions: kMaxStrips - 1,
+                    numberEntry: true,
+                    display: '$stripCount',
+                    onChanged: (v) => setLocal(() => stripCount = v.round()),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const SizedBox(width: 90, child: Text('Stripetyp')),
+                      Expanded(
+                        child: DropdownButtonFormField<int>(
+                          initialValue: ledsPerMeter,
+                          isDense: true,
+                          decoration: const InputDecoration(
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: [
+                            for (final d in kLedDensities)
+                              DropdownMenuItem(
+                                value: d,
+                                child: Text('$d LEDs/m'),
+                              ),
+                          ],
+                          onChanged: (v) =>
+                              setLocal(() => ledsPerMeter = v ?? ledsPerMeter),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (error != null)
+                    Text(
+                      error,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    )
+                  else
+                    Text(
+                      '${columns * rows} LEDs auf $stripCount '
+                      '${stripCount == 1 ? "Stripe" : "Stripes"} à '
+                      '${rows ~/ stripCount} '
+                      '${rows ~/ stripCount == 1 ? "Zeile" : "Zeilen"} · '
+                      '${fmtMeters(widthM)} × ${fmtMeters(heightM)}\n'
+                      'Verdrahtung im Mäander: jede zweite Zeile läuft '
+                      'zurück. Jeder Stripe wird links oben eingespeist.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Abbrechen'),
+              ),
+              FilledButton(
+                onPressed: error != null
+                    ? null
+                    : () => Navigator.pop(context, true),
+                child: const Text('Erstellen'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (created != true) return;
+    if (state.createMatrix(
+          columns: columns,
+          rows: rows,
+          stripCount: stripCount,
+          ledsPerMeter: ledsPerMeter,
+        ) ==
+        null) {
+      _showError('Matrix konnte nicht erstellt werden.');
+    }
+  }
+
   Future<void> _showSceneWidthDialog() async {
     await showDialog(
       context: context,
@@ -479,6 +611,8 @@ class _EditorScreenState extends State<EditorScreen>
                           _importConfig();
                         case _FileAction.sceneWidth:
                           _showSceneWidthDialog();
+                        case _FileAction.createMatrix:
+                          _showMatrixDialog();
                         case _FileAction.managePages:
                           _openPagesScreen();
                         case _FileAction.toggleGrid:
@@ -532,6 +666,13 @@ class _EditorScreenState extends State<EditorScreen>
                         child: ListTile(
                           leading: Icon(Icons.straighten_outlined),
                           title: Text('Maßstab (Bildbreite)'),
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: _FileAction.createMatrix,
+                        child: ListTile(
+                          leading: Icon(Icons.grid_4x4_outlined),
+                          title: Text('LED-Matrix erstellen'),
                         ),
                       ),
                       const PopupMenuItem(

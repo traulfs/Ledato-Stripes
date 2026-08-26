@@ -553,6 +553,120 @@ class AppState extends ChangeNotifier {
     changed();
   }
 
+  // ---------- LED-Matrix ----------
+  //
+  // Eine Matrix ist kein eigener Objekttyp, sondern ganz normale Stripes:
+  // jede Zeile wird ein Abschnitt, die Zeilen eines Stripes liegen im
+  // Zeilenabstand 1 ÷ Dichte übereinander. Verdrahtet wird im Mäander —
+  // jede zweite Zeile beginnt rechts und läuft nach links (Winkel 180°),
+  // sodass der fortlaufende LED-Index eines Stripes exakt dem realen
+  // Kabelverlauf folgt. Bewusst *nicht* über [StripSection.reversed]: das
+  // dreht nur die Farbberechnung, nicht die Position der LEDs und würde die
+  // Adressierung (auch die über DDP) falsch machen.
+  //
+  // Mehrere Stripes werden übereinander gestapelt, jeder mit eigener
+  // Einspeisung links oben in seinem Block — passend zur DDP-Zuordnung
+  // "destination N ⇒ strips[N-1]".
+
+  /// Prüft die Eckdaten einer zu erzeugenden Matrix und liefert einen
+  /// erklärenden Fehlertext, oder null wenn sie sich so bauen lässt.
+  String? matrixError({
+    required int columns,
+    required int rows,
+    required int stripCount,
+  }) {
+    if (columns < 1 || rows < 1 || stripCount < 1) {
+      return 'Spalten, Zeilen und Stripe-Anzahl müssen mindestens 1 sein.';
+    }
+    if (stripCount > rows) {
+      return 'Mehr Stripes ($stripCount) als Zeilen ($rows) — jeder Stripe '
+          'braucht mindestens eine Zeile.';
+    }
+    if (rows % stripCount != 0) {
+      return '$rows Zeilen lassen sich nicht gleichmäßig auf $stripCount '
+          'Stripes verteilen.';
+    }
+    final free = kMaxStrips - strips.length;
+    if (stripCount > free) {
+      return 'Nur noch $free von $kMaxStrips Stripes frei — die Matrix '
+          'bräuchte $stripCount.';
+    }
+    final perStrip = columns * (rows ~/ stripCount);
+    if (perStrip > kMaxLedsPerStrip) {
+      return '$perStrip LEDs pro Stripe überschreiten das Maximum von '
+          '$kMaxLedsPerStrip. Mehr Stripes wählen oder die Matrix verkleinern.';
+    }
+    return null;
+  }
+
+  /// Erzeugt eine Matrix aus [stripCount] übereinander liegenden Stripes mit
+  /// je [rows] ÷ [stripCount] Zeilen à [columns] LEDs und hängt sie an die
+  /// vorhandenen Stripes an. Die Matrix wird in der Szene zentriert.
+  /// Gibt die neuen Stripes zurück, oder null wenn [matrixError] etwas
+  /// zu beanstanden hat.
+  List<LedStrip>? createMatrix({
+    required int columns,
+    required int rows,
+    required int stripCount,
+    required int ledsPerMeter,
+  }) {
+    if (matrixError(columns: columns, rows: rows, stripCount: stripCount) !=
+        null) {
+      return null;
+    }
+    final rowsPerStrip = rows ~/ stripCount;
+
+    // Zeilen- und Spaltenabstand ist der LED-Pitch, damit die Pixel quadratisch
+    // sind. In normalisierten Bildkoordinaten ist y zusätzlich um das
+    // Seitenverhältnis zu korrigieren (vgl. [sectionEnd]).
+    final pitch = 1.0 / ledsPerMeter;
+    final ay = contentAspect > 1e-6 ? contentAspect : 1.0;
+    final dx = pitch / sceneWidthMeters;
+    final dy = pitch / (sceneWidthMeters * ay);
+    final left = 0.5 - (columns - 1) * dx / 2;
+    final top = 0.5 - (rows - 1) * dy / 2;
+    final right = left + (columns - 1) * dx;
+
+    final created = <LedStrip>[];
+    for (var b = 0; b < stripCount; b++) {
+      final firstRow = b * rowsPerStrip;
+      final sections = <StripSection>[];
+      for (var local = 0; local < rowsPerStrip; local++) {
+        final forward = local.isEven; // Mäander innerhalb des Stripes
+        sections.add(
+          StripSection(
+            start: Offset(
+              forward ? left : right,
+              top + (firstRow + local) * dy,
+            ),
+            angle: forward ? 0.0 : math.pi,
+            ledCount: columns,
+            color: _defaultColors[(strips.length + b) % _defaultColors.length],
+          ),
+        );
+      }
+      final strip = LedStrip(
+        id: '${DateTime.now().microsecondsSinceEpoch}_$b',
+        name: stripCount == 1
+            ? 'Matrix $columns×$rows'
+            : 'Matrix Z${firstRow + 1}–${firstRow + rowsPerStrip}',
+        ledsPerMeter: ledsPerMeter,
+        sections: sections,
+      );
+      strips.add(strip);
+      created.add(strip);
+    }
+
+    final first = created.first;
+    selectedId = first.id;
+    selectedSectionIndex = 0;
+    selection
+      ..clear()
+      ..add((first.id, 0));
+    changed();
+    return created;
+  }
+
   void removeStrip(LedStrip s) {
     strips.remove(s);
     if (selectedId == s.id) {
