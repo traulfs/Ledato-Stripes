@@ -74,6 +74,57 @@ LedStrip stripFromProto(pb.Strip p) => LedStrip(
   continuousEffect: p.continuousEffect,
 );
 
+/// Verknüpft die Dart- und Protobuf-Enums über den Namen statt über die
+/// Ordinalzahl — wie bei [EffectType] robust gegen Umsortieren.
+const Map<MatrixWiring, pb.MatrixWiring> _wiringToProto = {
+  MatrixWiring.serpentine: pb.MatrixWiring.MATRIX_WIRING_SERPENTINE,
+  MatrixWiring.progressive: pb.MatrixWiring.MATRIX_WIRING_PROGRESSIVE,
+};
+final Map<pb.MatrixWiring, MatrixWiring> _wiringFromProto = {
+  for (final e in _wiringToProto.entries) e.value: e.key,
+};
+
+const Map<MatrixOrigin, pb.MatrixOrigin> _originToProto = {
+  MatrixOrigin.topLeft: pb.MatrixOrigin.MATRIX_ORIGIN_TOP_LEFT,
+  MatrixOrigin.topRight: pb.MatrixOrigin.MATRIX_ORIGIN_TOP_RIGHT,
+  MatrixOrigin.bottomLeft: pb.MatrixOrigin.MATRIX_ORIGIN_BOTTOM_LEFT,
+  MatrixOrigin.bottomRight: pb.MatrixOrigin.MATRIX_ORIGIN_BOTTOM_RIGHT,
+};
+final Map<pb.MatrixOrigin, MatrixOrigin> _originFromProto = {
+  for (final e in _originToProto.entries) e.value: e.key,
+};
+
+pb.MatrixBank bankToProto(MatrixBank b) => pb.MatrixBank(
+  stripId: b.stripId,
+  firstRow: b.firstRow,
+  rowCount: b.rowCount,
+);
+
+MatrixBank bankFromProto(pb.MatrixBank p) =>
+    MatrixBank(stripId: p.stripId, firstRow: p.firstRow, rowCount: p.rowCount);
+
+pb.Matrix matrixToProto(LedMatrix m) => pb.Matrix(
+  id: m.id,
+  name: m.name,
+  columns: m.columns,
+  rows: m.rows,
+  wiring: _wiringToProto[m.wiring] ?? pb.MatrixWiring.MATRIX_WIRING_SERPENTINE,
+  origin: _originToProto[m.origin] ?? pb.MatrixOrigin.MATRIX_ORIGIN_TOP_LEFT,
+  ledsPerMeter: m.ledsPerMeter,
+  banks: [for (final b in m.banks) bankToProto(b)],
+);
+
+LedMatrix matrixFromProto(pb.Matrix p) => LedMatrix(
+  id: p.id,
+  name: p.name,
+  columns: p.columns,
+  rows: p.rows,
+  wiring: _wiringFromProto[p.wiring] ?? MatrixWiring.serpentine,
+  origin: _originFromProto[p.origin] ?? MatrixOrigin.topLeft,
+  ledsPerMeter: p.ledsPerMeter,
+  banks: [for (final b in p.banks) bankFromProto(b)],
+);
+
 pb.Page pageToProto(LedPage page) => pb.Page(
   id: page.id,
   name: page.name,
@@ -85,6 +136,7 @@ pb.Page pageToProto(LedPage page) => pb.Page(
   backgroundDim: page.backgroundDim,
   glow: page.glow,
   strips: [for (final s in page.strips) stripToProto(s)],
+  matrices: [for (final m in page.matrices) matrixToProto(m)],
 );
 
 LedPage pageFromProto(pb.Page p) => LedPage(
@@ -98,6 +150,7 @@ LedPage pageFromProto(pb.Page p) => LedPage(
   backgroundDim: p.backgroundDim,
   glow: p.glow,
   strips: [for (final s in p.strips) stripFromProto(s)],
+  matrices: [for (final m in p.matrices) matrixFromProto(m)],
 );
 
 pb.Document documentToProto(List<LedPage> pages, int activePageIndex) =>

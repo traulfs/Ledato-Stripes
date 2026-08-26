@@ -173,6 +173,113 @@ class LedStrip {
   }
 }
 
+/// Verdrahtungsart der Zeilen einer Matrix.
+enum MatrixWiring {
+  /// Mäander: jede zweite Zeile eines Stripes läuft rückwärts, das Kabel
+  /// schlängelt sich ohne Rückleitung durch den Block.
+  serpentine('Mäander'),
+
+  /// Jede Zeile beginnt an derselben Kante, zwischen den Zeilen liegt eine
+  /// Rückleitung.
+  progressive('Zeilenweise');
+
+  const MatrixWiring(this.label);
+  final String label;
+}
+
+/// Ecke, in der Zeile 0 / Spalte 0 liegt und in der der erste Stripe
+/// eingespeist wird.
+enum MatrixOrigin {
+  topLeft('Oben links'),
+  topRight('Oben rechts'),
+  bottomLeft('Unten links'),
+  bottomRight('Unten rechts');
+
+  const MatrixOrigin(this.label);
+  final String label;
+}
+
+/// Ein Stripe als zusammenhängender Zeilenblock einer Matrix.
+class MatrixBank {
+  MatrixBank({
+    required this.stripId,
+    required this.firstRow,
+    required this.rowCount,
+  });
+
+  final String stripId;
+  final int firstRow;
+  final int rowCount;
+
+  MatrixBank clone() =>
+      MatrixBank(stripId: stripId, firstRow: firstRow, rowCount: rowCount);
+}
+
+/// Logische LED-Matrix aus einem oder mehreren Stripes.
+///
+/// Bewusst nur die *logische* Struktur: wo die Zeilen in der Szene liegen,
+/// steht weiterhin in den Stripes und ihren Abschnitten — die bleiben damit
+/// frei verschiebbar. Hier steht, was ein Controller braucht, um (x, y) auf
+/// einen LED-Index abzubilden, siehe [ledIndexAt]. Genau diese Angaben
+/// landen im Protobuf und damit in der Konfiguration für die Firmware.
+class LedMatrix {
+  LedMatrix({
+    required this.id,
+    required this.name,
+    required this.columns,
+    required this.rows,
+    required this.ledsPerMeter,
+    required this.banks,
+    this.wiring = MatrixWiring.serpentine,
+    this.origin = MatrixOrigin.topLeft,
+  });
+
+  final String id;
+  String name;
+  int columns;
+  int rows;
+  MatrixWiring wiring;
+  MatrixOrigin origin;
+
+  /// LED-Dichte aller beteiligten Stripes; zugleich der Pixelabstand
+  /// (Zeilenabstand = Spaltenabstand = 1 ÷ [ledsPerMeter] Meter).
+  int ledsPerMeter;
+
+  /// Die Stripes der Matrix, von der Ursprungsecke weg gestapelt. Die
+  /// Position in dieser Liste + 1 ist die DDP-destination des Stripes.
+  List<MatrixBank> banks;
+
+  int get ledCount => columns * rows;
+
+  /// Bank (Stripe) und LED-Index *innerhalb dieses Stripes* für ein Pixel —
+  /// dieselbe Rechnung, die die Firmware anstellt. Gibt null zurück, wenn
+  /// (x, y) außerhalb liegt oder keine Bank die Zeile abdeckt.
+  ({int bank, int index})? ledIndexAt(int x, int y) {
+    if (x < 0 || x >= columns || y < 0 || y >= rows) return null;
+    for (var b = 0; b < banks.length; b++) {
+      final bank = banks[b];
+      if (y < bank.firstRow || y >= bank.firstRow + bank.rowCount) continue;
+      final local = y - bank.firstRow;
+      final backwards =
+          wiring == MatrixWiring.serpentine && local.isOdd;
+      final col = backwards ? columns - 1 - x : x;
+      return (bank: b, index: local * columns + col);
+    }
+    return null;
+  }
+
+  LedMatrix clone() => LedMatrix(
+    id: id,
+    name: name,
+    columns: columns,
+    rows: rows,
+    wiring: wiring,
+    origin: origin,
+    ledsPerMeter: ledsPerMeter,
+    banks: [for (final b in banks) b.clone()],
+  );
+}
+
 /// Eine vollständige, eigenständige Lichtszene: Stripes samt Hintergrund,
 /// Maßstab und Darstellungseinstellungen. Der Player (siehe [AppState])
 /// schaltet zwischen Pages um, jede mit ihrer eigenen Anzeigedauer.
@@ -188,7 +295,9 @@ class LedPage {
     this.backgroundDim = 0.5,
     this.glow = 1.0,
     List<LedStrip>? strips,
-  }) : strips = strips ?? [];
+    List<LedMatrix>? matrices,
+  }) : strips = strips ?? [],
+       matrices = matrices ?? [];
 
   final String id;
   String name;
@@ -200,6 +309,10 @@ class LedPage {
   double backgroundDim;
   double glow;
   List<LedStrip> strips;
+
+  /// Logische Matrizen dieser Szene; jede verweist über [MatrixBank.stripId]
+  /// auf ihre Stripes in [strips].
+  List<LedMatrix> matrices;
 
   /// Tiefe Kopie für Undo/Redo-Schnappschüsse.
   LedPage clone() => LedPage(
@@ -213,5 +326,6 @@ class LedPage {
     backgroundDim: backgroundDim,
     glow: glow,
     strips: [for (final s in strips) s.clone()],
+    matrices: [for (final m in matrices) m.clone()],
   );
 }

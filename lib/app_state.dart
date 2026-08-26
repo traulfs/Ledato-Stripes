@@ -111,6 +111,9 @@ class AppState extends ChangeNotifier {
       backgroundDim: copy.backgroundDim,
       glow: copy.glow,
       strips: copy.strips,
+      // Die Kopie enthält Stripes mit denselben IDs, die Bank-Verweise der
+      // Matrizen zeigen darin also weiterhin auf die richtigen Stripes.
+      matrices: copy.matrices,
     );
   }
 
@@ -628,6 +631,7 @@ class AppState extends ChangeNotifier {
     final right = left + (columns - 1) * dx;
 
     final created = <LedStrip>[];
+    final banks = <MatrixBank>[];
     for (var b = 0; b < stripCount; b++) {
       final firstRow = b * rowsPerStrip;
       final sections = <StripSection>[];
@@ -661,7 +665,28 @@ class AppState extends ChangeNotifier {
       );
       strips.add(strip);
       created.add(strip);
+      banks.add(
+        MatrixBank(
+          stripId: strip.id,
+          firstRow: firstRow,
+          rowCount: rowsPerStrip,
+        ),
+      );
     }
+
+    // Die logische Matrix neben den Stripes führen: sie beschreibt für die
+    // Controller-Firmware, wie die fortlaufenden LED-Indizes als Pixelfläche
+    // zu lesen sind, während die Stripes die Geometrie in der Szene halten.
+    activePage.matrices.add(
+      LedMatrix(
+        id: 'm${DateTime.now().microsecondsSinceEpoch}',
+        name: 'Matrix $columns×$rows',
+        columns: columns,
+        rows: rows,
+        ledsPerMeter: ledsPerMeter,
+        banks: banks,
+      ),
+    );
 
     final first = created.first;
     selectedId = first.id;
@@ -675,6 +700,11 @@ class AppState extends ChangeNotifier {
 
   void removeStrip(LedStrip s) {
     strips.remove(s);
+    // Eine Matrix ohne alle ihre Stripes ist keine mehr — die verbleibenden
+    // Stripes bleiben als gewöhnliche Stripes bestehen.
+    activePage.matrices.removeWhere(
+      (m) => m.banks.any((b) => b.stripId == s.id),
+    );
     if (selectedId == s.id) {
       selectedId = null;
       selectedSectionIndex = 0;
@@ -977,6 +1007,7 @@ class _DdpOverride {
 class _Snapshot {
   _Snapshot(AppState s)
     : strips = [for (final strip in s.strips) strip.clone()],
+      matrices = [for (final m in s.activePage.matrices) m.clone()],
       selectedId = s.selectedId,
       selectedSectionIndex = s.selectedSectionIndex,
       sceneWidthMeters = s.sceneWidthMeters,
@@ -986,6 +1017,7 @@ class _Snapshot {
       glow = s.glow;
 
   final List<LedStrip> strips;
+  final List<LedMatrix> matrices;
   final String? selectedId;
   final int selectedSectionIndex;
   final double sceneWidthMeters;
@@ -998,6 +1030,9 @@ class _Snapshot {
     s.strips
       ..clear()
       ..addAll([for (final strip in strips) strip.clone()]);
+    s.activePage.matrices
+      ..clear()
+      ..addAll([for (final m in matrices) m.clone()]);
     s.selectedId = s.strips.any((e) => e.id == selectedId) ? selectedId : null;
     s.selectedSectionIndex = selectedSectionIndex;
     s.sceneWidthMeters = sceneWidthMeters;

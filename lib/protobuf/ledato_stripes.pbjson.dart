@@ -15,6 +15,37 @@ import 'dart:convert' as $convert;
 import 'dart:core' as $core;
 import 'dart:typed_data' as $typed_data;
 
+@$core.Deprecated('Use matrixWiringDescriptor instead')
+const MatrixWiring$json = {
+  '1': 'MatrixWiring',
+  '2': [
+    {'1': 'MATRIX_WIRING_SERPENTINE', '2': 0},
+    {'1': 'MATRIX_WIRING_PROGRESSIVE', '2': 1},
+  ],
+};
+
+/// Descriptor for `MatrixWiring`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List matrixWiringDescriptor = $convert.base64Decode(
+    'CgxNYXRyaXhXaXJpbmcSHAoYTUFUUklYX1dJUklOR19TRVJQRU5USU5FEAASHQoZTUFUUklYX1'
+    'dJUklOR19QUk9HUkVTU0lWRRAB');
+
+@$core.Deprecated('Use matrixOriginDescriptor instead')
+const MatrixOrigin$json = {
+  '1': 'MatrixOrigin',
+  '2': [
+    {'1': 'MATRIX_ORIGIN_TOP_LEFT', '2': 0},
+    {'1': 'MATRIX_ORIGIN_TOP_RIGHT', '2': 1},
+    {'1': 'MATRIX_ORIGIN_BOTTOM_LEFT', '2': 2},
+    {'1': 'MATRIX_ORIGIN_BOTTOM_RIGHT', '2': 3},
+  ],
+};
+
+/// Descriptor for `MatrixOrigin`. Decode as a `google.protobuf.EnumDescriptorProto`.
+final $typed_data.Uint8List matrixOriginDescriptor = $convert.base64Decode(
+    'CgxNYXRyaXhPcmlnaW4SGgoWTUFUUklYX09SSUdJTl9UT1BfTEVGVBAAEhsKF01BVFJJWF9PUk'
+    'lHSU5fVE9QX1JJR0hUEAESHQoZTUFUUklYX09SSUdJTl9CT1RUT01fTEVGVBACEh4KGk1BVFJJ'
+    'WF9PUklHSU5fQk9UVE9NX1JJR0hUEAM=');
+
 @$core.Deprecated('Use effectDescriptor instead')
 const Effect$json = {
   '1': 'Effect',
@@ -101,6 +132,14 @@ const Page$json = {
       '6': '.ledato_stripes.Strip',
       '10': 'strips'
     },
+    {
+      '1': 'matrices',
+      '3': 11,
+      '4': 3,
+      '5': 11,
+      '6': '.ledato_stripes.Matrix',
+      '10': 'matrices'
+    },
   ],
 };
 
@@ -112,7 +151,68 @@ final $typed_data.Uint8List pageDescriptor = $convert.base64Decode(
     'FnZV9hc3BlY3QYBiABKAhSDnVzZUltYWdlQXNwZWN0EicKD2JhY2tncm91bmRfcGF0aBgHIAEo'
     'CVIOYmFja2dyb3VuZFBhdGgSJQoOYmFja2dyb3VuZF9kaW0YCCABKAFSDWJhY2tncm91bmREaW'
     '0SEgoEZ2xvdxgJIAEoAVIEZ2xvdxItCgZzdHJpcHMYCiADKAsyFS5sZWRhdG9fc3RyaXBlcy5T'
-    'dHJpcFIGc3RyaXBz');
+    'dHJpcFIGc3RyaXBzEjIKCG1hdHJpY2VzGAsgAygLMhYubGVkYXRvX3N0cmlwZXMuTWF0cml4Ug'
+    'htYXRyaWNlcw==');
+
+@$core.Deprecated('Use matrixDescriptor instead')
+const Matrix$json = {
+  '1': 'Matrix',
+  '2': [
+    {'1': 'id', '3': 1, '4': 1, '5': 9, '10': 'id'},
+    {'1': 'name', '3': 2, '4': 1, '5': 9, '10': 'name'},
+    {'1': 'columns', '3': 3, '4': 1, '5': 13, '10': 'columns'},
+    {'1': 'rows', '3': 4, '4': 1, '5': 13, '10': 'rows'},
+    {
+      '1': 'wiring',
+      '3': 5,
+      '4': 1,
+      '5': 14,
+      '6': '.ledato_stripes.MatrixWiring',
+      '10': 'wiring'
+    },
+    {
+      '1': 'origin',
+      '3': 6,
+      '4': 1,
+      '5': 14,
+      '6': '.ledato_stripes.MatrixOrigin',
+      '10': 'origin'
+    },
+    {'1': 'leds_per_meter', '3': 7, '4': 1, '5': 13, '10': 'ledsPerMeter'},
+    {
+      '1': 'banks',
+      '3': 8,
+      '4': 3,
+      '5': 11,
+      '6': '.ledato_stripes.MatrixBank',
+      '10': 'banks'
+    },
+  ],
+};
+
+/// Descriptor for `Matrix`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List matrixDescriptor = $convert.base64Decode(
+    'CgZNYXRyaXgSDgoCaWQYASABKAlSAmlkEhIKBG5hbWUYAiABKAlSBG5hbWUSGAoHY29sdW1ucx'
+    'gDIAEoDVIHY29sdW1ucxISCgRyb3dzGAQgASgNUgRyb3dzEjQKBndpcmluZxgFIAEoDjIcLmxl'
+    'ZGF0b19zdHJpcGVzLk1hdHJpeFdpcmluZ1IGd2lyaW5nEjQKBm9yaWdpbhgGIAEoDjIcLmxlZG'
+    'F0b19zdHJpcGVzLk1hdHJpeE9yaWdpblIGb3JpZ2luEiQKDmxlZHNfcGVyX21ldGVyGAcgASgN'
+    'UgxsZWRzUGVyTWV0ZXISMAoFYmFua3MYCCADKAsyGi5sZWRhdG9fc3RyaXBlcy5NYXRyaXhCYW'
+    '5rUgViYW5rcw==');
+
+@$core.Deprecated('Use matrixBankDescriptor instead')
+const MatrixBank$json = {
+  '1': 'MatrixBank',
+  '2': [
+    {'1': 'strip_id', '3': 1, '4': 1, '5': 9, '10': 'stripId'},
+    {'1': 'first_row', '3': 2, '4': 1, '5': 13, '10': 'firstRow'},
+    {'1': 'row_count', '3': 3, '4': 1, '5': 13, '10': 'rowCount'},
+  ],
+};
+
+/// Descriptor for `MatrixBank`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List matrixBankDescriptor = $convert.base64Decode(
+    'CgpNYXRyaXhCYW5rEhkKCHN0cmlwX2lkGAEgASgJUgdzdHJpcElkEhsKCWZpcnN0X3JvdxgCIA'
+    'EoDVIIZmlyc3RSb3cSGwoJcm93X2NvdW50GAMgASgNUghyb3dDb3VudA==');
 
 @$core.Deprecated('Use stripDescriptor instead')
 const Strip$json = {

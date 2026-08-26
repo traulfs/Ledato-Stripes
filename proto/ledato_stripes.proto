@@ -24,6 +24,63 @@ message Page {
   double background_dim = 8;
   double glow = 9;
   repeated Strip strips = 10;
+  repeated Matrix matrices = 11;
+}
+
+// Logische LED-Matrix, gebildet aus einem oder mehreren Stripes.
+//
+// Diese Nachricht ist die Schnittstelle zur Controller-Firmware: sie sagt,
+// wie die fortlaufenden LED-Indizes der beteiligten Stripes als Pixelfläche
+// zu lesen sind. Die geometrische Wahrheit (wo jede Zeile in der Szene
+// liegt) steckt weiterhin in den Stripes und ihren Abschnitten — hier steht
+// nur die logische Struktur, die ein Controller braucht, um (x, y) auf einen
+// LED-Index abzubilden.
+//
+// Adressierung, die die Firmware daraus ableiten kann:
+//   Zeile r liegt in dem Bank-Eintrag mit first_row <= r < first_row+row_count.
+//   Innerhalb der Bank ist local = r - first_row.
+//   Bei SERPENTINE laufen Zeilen mit ungeradem local rückwärts.
+//   Index in der Bank = local * columns + (rückwärts ? columns-1-x : x).
+// Der Index ist bankweise, beginnt in jedem Stripe also wieder bei 0 —
+// passend dazu, dass jeder Stripe seine eigene Einspeisung hat.
+message Matrix {
+  string id = 1;
+  string name = 2;
+  uint32 columns = 3;
+  uint32 rows = 4;
+  MatrixWiring wiring = 5;
+  MatrixOrigin origin = 6;
+  // LED-Dichte aller beteiligten Stripes; zugleich der Pixelabstand der
+  // Matrix (Zeilenabstand = Spaltenabstand = 1/leds_per_meter Meter).
+  uint32 leds_per_meter = 7;
+  // Die Stripes der Matrix, von der Ursprungsecke weg gestapelt. Die
+  // Position in dieser Liste + 1 ist die DDP-destination des Stripes.
+  repeated MatrixBank banks = 8;
+}
+
+// Ein Stripe als zusammenhängender Zeilenblock der Matrix.
+message MatrixBank {
+  string strip_id = 1;
+  uint32 first_row = 2;
+  uint32 row_count = 3;
+}
+
+enum MatrixWiring {
+  // Mäander: jede zweite Zeile eines Stripes läuft rückwärts, das Kabel
+  // schlängelt sich ohne Rückleitung durch den Block.
+  MATRIX_WIRING_SERPENTINE = 0;
+  // Jede Zeile beginnt an derselben Kante, zwischen den Zeilen liegt eine
+  // Rückleitung.
+  MATRIX_WIRING_PROGRESSIVE = 1;
+}
+
+// Ecke, in der Zeile 0 / Spalte 0 liegt und in der der erste Stripe
+// eingespeist wird.
+enum MatrixOrigin {
+  MATRIX_ORIGIN_TOP_LEFT = 0;
+  MATRIX_ORIGIN_TOP_RIGHT = 1;
+  MATRIX_ORIGIN_BOTTOM_LEFT = 2;
+  MATRIX_ORIGIN_BOTTOM_RIGHT = 3;
 }
 
 message Strip {

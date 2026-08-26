@@ -105,6 +105,7 @@ class Page extends $pb.GeneratedMessage {
     $core.double? backgroundDim,
     $core.double? glow,
     $core.Iterable<Strip>? strips,
+    $core.Iterable<Matrix>? matrices,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -117,6 +118,7 @@ class Page extends $pb.GeneratedMessage {
     if (backgroundDim != null) result.backgroundDim = backgroundDim;
     if (glow != null) result.glow = glow;
     if (strips != null) result.strips.addAll(strips);
+    if (matrices != null) result.matrices.addAll(matrices);
     return result;
   }
 
@@ -143,6 +145,8 @@ class Page extends $pb.GeneratedMessage {
     ..aD(8, _omitFieldNames ? '' : 'backgroundDim')
     ..aD(9, _omitFieldNames ? '' : 'glow')
     ..pPM<Strip>(10, _omitFieldNames ? '' : 'strips', subBuilder: Strip.create)
+    ..pPM<Matrix>(11, _omitFieldNames ? '' : 'matrices',
+        subBuilder: Matrix.create)
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -246,6 +250,242 @@ class Page extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(10)
   $pb.PbList<Strip> get strips => $_getList(9);
+
+  @$pb.TagNumber(11)
+  $pb.PbList<Matrix> get matrices => $_getList(10);
+}
+
+/// Logische LED-Matrix, gebildet aus einem oder mehreren Stripes.
+///
+/// Diese Nachricht ist die Schnittstelle zur Controller-Firmware: sie sagt,
+/// wie die fortlaufenden LED-Indizes der beteiligten Stripes als Pixelfläche
+/// zu lesen sind. Die geometrische Wahrheit (wo jede Zeile in der Szene
+/// liegt) steckt weiterhin in den Stripes und ihren Abschnitten — hier steht
+/// nur die logische Struktur, die ein Controller braucht, um (x, y) auf einen
+/// LED-Index abzubilden.
+///
+/// Adressierung, die die Firmware daraus ableiten kann:
+///   Zeile r liegt in dem Bank-Eintrag mit first_row <= r < first_row+row_count.
+///   Innerhalb der Bank ist local = r - first_row.
+///   Bei SERPENTINE laufen Zeilen mit ungeradem local rückwärts.
+///   Index in der Bank = local * columns + (rückwärts ? columns-1-x : x).
+/// Der Index ist bankweise, beginnt in jedem Stripe also wieder bei 0 —
+/// passend dazu, dass jeder Stripe seine eigene Einspeisung hat.
+class Matrix extends $pb.GeneratedMessage {
+  factory Matrix({
+    $core.String? id,
+    $core.String? name,
+    $core.int? columns,
+    $core.int? rows,
+    MatrixWiring? wiring,
+    MatrixOrigin? origin,
+    $core.int? ledsPerMeter,
+    $core.Iterable<MatrixBank>? banks,
+  }) {
+    final result = create();
+    if (id != null) result.id = id;
+    if (name != null) result.name = name;
+    if (columns != null) result.columns = columns;
+    if (rows != null) result.rows = rows;
+    if (wiring != null) result.wiring = wiring;
+    if (origin != null) result.origin = origin;
+    if (ledsPerMeter != null) result.ledsPerMeter = ledsPerMeter;
+    if (banks != null) result.banks.addAll(banks);
+    return result;
+  }
+
+  Matrix._();
+
+  factory Matrix.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory Matrix.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'Matrix',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ledato_stripes'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'id')
+    ..aOS(2, _omitFieldNames ? '' : 'name')
+    ..aI(3, _omitFieldNames ? '' : 'columns', fieldType: $pb.PbFieldType.OU3)
+    ..aI(4, _omitFieldNames ? '' : 'rows', fieldType: $pb.PbFieldType.OU3)
+    ..aE<MatrixWiring>(5, _omitFieldNames ? '' : 'wiring',
+        enumValues: MatrixWiring.values)
+    ..aE<MatrixOrigin>(6, _omitFieldNames ? '' : 'origin',
+        enumValues: MatrixOrigin.values)
+    ..aI(7, _omitFieldNames ? '' : 'ledsPerMeter',
+        fieldType: $pb.PbFieldType.OU3)
+    ..pPM<MatrixBank>(8, _omitFieldNames ? '' : 'banks',
+        subBuilder: MatrixBank.create)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Matrix clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  Matrix copyWith(void Function(Matrix) updates) =>
+      super.copyWith((message) => updates(message as Matrix)) as Matrix;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static Matrix create() => Matrix._();
+  @$core.override
+  Matrix createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static Matrix getDefault() =>
+      _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<Matrix>(create);
+  static Matrix? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get id => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set id($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.String get name => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set name($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasName() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearName() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get columns => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set columns($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasColumns() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearColumns() => $_clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.int get rows => $_getIZ(3);
+  @$pb.TagNumber(4)
+  set rows($core.int value) => $_setUnsignedInt32(3, value);
+  @$pb.TagNumber(4)
+  $core.bool hasRows() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearRows() => $_clearField(4);
+
+  @$pb.TagNumber(5)
+  MatrixWiring get wiring => $_getN(4);
+  @$pb.TagNumber(5)
+  set wiring(MatrixWiring value) => $_setField(5, value);
+  @$pb.TagNumber(5)
+  $core.bool hasWiring() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearWiring() => $_clearField(5);
+
+  @$pb.TagNumber(6)
+  MatrixOrigin get origin => $_getN(5);
+  @$pb.TagNumber(6)
+  set origin(MatrixOrigin value) => $_setField(6, value);
+  @$pb.TagNumber(6)
+  $core.bool hasOrigin() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearOrigin() => $_clearField(6);
+
+  /// LED-Dichte aller beteiligten Stripes; zugleich der Pixelabstand der
+  /// Matrix (Zeilenabstand = Spaltenabstand = 1/leds_per_meter Meter).
+  @$pb.TagNumber(7)
+  $core.int get ledsPerMeter => $_getIZ(6);
+  @$pb.TagNumber(7)
+  set ledsPerMeter($core.int value) => $_setUnsignedInt32(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasLedsPerMeter() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearLedsPerMeter() => $_clearField(7);
+
+  /// Die Stripes der Matrix, von der Ursprungsecke weg gestapelt. Die
+  /// Position in dieser Liste + 1 ist die DDP-destination des Stripes.
+  @$pb.TagNumber(8)
+  $pb.PbList<MatrixBank> get banks => $_getList(7);
+}
+
+/// Ein Stripe als zusammenhängender Zeilenblock der Matrix.
+class MatrixBank extends $pb.GeneratedMessage {
+  factory MatrixBank({
+    $core.String? stripId,
+    $core.int? firstRow,
+    $core.int? rowCount,
+  }) {
+    final result = create();
+    if (stripId != null) result.stripId = stripId;
+    if (firstRow != null) result.firstRow = firstRow;
+    if (rowCount != null) result.rowCount = rowCount;
+    return result;
+  }
+
+  MatrixBank._();
+
+  factory MatrixBank.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory MatrixBank.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'MatrixBank',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'ledato_stripes'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'stripId')
+    ..aI(2, _omitFieldNames ? '' : 'firstRow', fieldType: $pb.PbFieldType.OU3)
+    ..aI(3, _omitFieldNames ? '' : 'rowCount', fieldType: $pb.PbFieldType.OU3)
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MatrixBank clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  MatrixBank copyWith(void Function(MatrixBank) updates) =>
+      super.copyWith((message) => updates(message as MatrixBank)) as MatrixBank;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static MatrixBank create() => MatrixBank._();
+  @$core.override
+  MatrixBank createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static MatrixBank getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<MatrixBank>(create);
+  static MatrixBank? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get stripId => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set stripId($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasStripId() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearStripId() => $_clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.int get firstRow => $_getIZ(1);
+  @$pb.TagNumber(2)
+  set firstRow($core.int value) => $_setUnsignedInt32(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasFirstRow() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearFirstRow() => $_clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.int get rowCount => $_getIZ(2);
+  @$pb.TagNumber(3)
+  set rowCount($core.int value) => $_setUnsignedInt32(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasRowCount() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearRowCount() => $_clearField(3);
 }
 
 class Strip extends $pb.GeneratedMessage {

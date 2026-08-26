@@ -14,6 +14,57 @@ import 'dart:core' as $core;
 
 import 'package:protobuf/protobuf.dart' as $pb;
 
+class MatrixWiring extends $pb.ProtobufEnum {
+  /// Mäander: jede zweite Zeile eines Stripes läuft rückwärts, das Kabel
+  /// schlängelt sich ohne Rückleitung durch den Block.
+  static const MatrixWiring MATRIX_WIRING_SERPENTINE =
+      MatrixWiring._(0, _omitEnumNames ? '' : 'MATRIX_WIRING_SERPENTINE');
+
+  /// Jede Zeile beginnt an derselben Kante, zwischen den Zeilen liegt eine
+  /// Rückleitung.
+  static const MatrixWiring MATRIX_WIRING_PROGRESSIVE =
+      MatrixWiring._(1, _omitEnumNames ? '' : 'MATRIX_WIRING_PROGRESSIVE');
+
+  static const $core.List<MatrixWiring> values = <MatrixWiring>[
+    MATRIX_WIRING_SERPENTINE,
+    MATRIX_WIRING_PROGRESSIVE,
+  ];
+
+  static final $core.List<MatrixWiring?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 1);
+  static MatrixWiring? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const MatrixWiring._(super.value, super.name);
+}
+
+/// Ecke, in der Zeile 0 / Spalte 0 liegt und in der der erste Stripe
+/// eingespeist wird.
+class MatrixOrigin extends $pb.ProtobufEnum {
+  static const MatrixOrigin MATRIX_ORIGIN_TOP_LEFT =
+      MatrixOrigin._(0, _omitEnumNames ? '' : 'MATRIX_ORIGIN_TOP_LEFT');
+  static const MatrixOrigin MATRIX_ORIGIN_TOP_RIGHT =
+      MatrixOrigin._(1, _omitEnumNames ? '' : 'MATRIX_ORIGIN_TOP_RIGHT');
+  static const MatrixOrigin MATRIX_ORIGIN_BOTTOM_LEFT =
+      MatrixOrigin._(2, _omitEnumNames ? '' : 'MATRIX_ORIGIN_BOTTOM_LEFT');
+  static const MatrixOrigin MATRIX_ORIGIN_BOTTOM_RIGHT =
+      MatrixOrigin._(3, _omitEnumNames ? '' : 'MATRIX_ORIGIN_BOTTOM_RIGHT');
+
+  static const $core.List<MatrixOrigin> values = <MatrixOrigin>[
+    MATRIX_ORIGIN_TOP_LEFT,
+    MATRIX_ORIGIN_TOP_RIGHT,
+    MATRIX_ORIGIN_BOTTOM_LEFT,
+    MATRIX_ORIGIN_BOTTOM_RIGHT,
+  ];
+
+  static final $core.List<MatrixOrigin?> _byValue =
+      $pb.ProtobufEnum.$_initByValueList(values, 3);
+  static MatrixOrigin? valueOf($core.int value) =>
+      value < 0 || value >= _byValue.length ? null : _byValue[value];
+
+  const MatrixOrigin._(super.value, super.name);
+}
+
 class Effect extends $pb.ProtobufEnum {
   static const Effect EFFECT_SOLID =
       Effect._(0, _omitEnumNames ? '' : 'EFFECT_SOLID');
