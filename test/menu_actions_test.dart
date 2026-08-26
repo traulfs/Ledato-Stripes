@@ -35,17 +35,22 @@ void main() {
   });
 
   tearDown(() async {
-    // Der Autosave der App läuft außerhalb der Testuhr weiter und kann die
-    // Konfigurationsdatei beim Aufräumen noch offen halten. POSIX stört das
-    // nicht, Windows verweigert das Löschen dann („wird von einem anderen
-    // Prozess verwendet"). Also kurz zurücktreten und erneut versuchen.
-    for (var attempt = 0; ; attempt++) {
+    // Der Autosave der App schreibt auf dem realen Dateisystem, während der
+    // Test in der Testuhr läuft — beim Aufräumen kann also noch ein
+    // Schreibvorgang unterwegs sein. POSIX stört das nicht, Windows
+    // verweigert das Löschen eines Verzeichnisses mit offener Datei
+    // („wird von einem anderen Prozess verwendet", errno 32).
+    //
+    // Also mehrfach versuchen und das Verzeichnis notfalls liegen lassen:
+    // es ist ein Wegwerf-Verzeichnis im Temp-Ordner des Systems, und ob es
+    // sich aufräumen lässt, sagt nichts über das Verhalten aus, das dieser
+    // Test prüft.
+    for (var attempt = 0; attempt < 40; attempt++) {
       try {
         if (await tmp.exists()) await tmp.delete(recursive: true);
         return;
       } on FileSystemException {
-        if (attempt >= 20) rethrow;
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
       }
     }
   });
