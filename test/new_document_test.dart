@@ -40,8 +40,15 @@ void main() {
 
   /// Frisch geladener AppState (leeres Verzeichnis ⇒ Erststart-Zustand),
   /// bei dem `_loaded` gesetzt ist und Undo-Schritte mitgeschrieben werden.
+  ///
+  /// Wird am Testende verworfen: jede Mutation stellt einen Autosave-Timer
+  /// (800 ms), und der feuert sonst noch, wenn [tmp] längst gelöscht ist —
+  /// unter Windows quittiert das Schreiben in ein verschwundenes Verzeichnis
+  /// das mit einer PathNotFoundException und lässt den Test nachträglich
+  /// scheitern. [AppState.dispose] bricht die Timer ab.
   Future<AppState> freshLoadedState() async {
     final st = AppState();
+    addTearDown(st.dispose);
     await st.load();
     return st;
   }

@@ -35,7 +35,19 @@ void main() {
   });
 
   tearDown(() async {
-    if (await tmp.exists()) await tmp.delete(recursive: true);
+    // Der Autosave der App läuft außerhalb der Testuhr weiter und kann die
+    // Konfigurationsdatei beim Aufräumen noch offen halten. POSIX stört das
+    // nicht, Windows verweigert das Löschen dann („wird von einem anderen
+    // Prozess verwendet"). Also kurz zurücktreten und erneut versuchen.
+    for (var attempt = 0; ; attempt++) {
+      try {
+        if (await tmp.exists()) await tmp.delete(recursive: true);
+        return;
+      } on FileSystemException {
+        if (attempt >= 20) rethrow;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    }
   });
 
   /// Startet die App in einem Fenster, das breit genug für das feste
