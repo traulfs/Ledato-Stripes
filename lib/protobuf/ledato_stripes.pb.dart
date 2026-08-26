@@ -255,6 +255,7 @@ class Strip extends $pb.GeneratedMessage {
     $core.int? ledsPerMeter,
     $core.bool? enabled,
     $core.Iterable<Section>? sections,
+    $core.bool? continuousEffect,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -262,6 +263,7 @@ class Strip extends $pb.GeneratedMessage {
     if (ledsPerMeter != null) result.ledsPerMeter = ledsPerMeter;
     if (enabled != null) result.enabled = enabled;
     if (sections != null) result.sections.addAll(sections);
+    if (continuousEffect != null) result.continuousEffect = continuousEffect;
     return result;
   }
 
@@ -285,6 +287,7 @@ class Strip extends $pb.GeneratedMessage {
     ..aOB(4, _omitFieldNames ? '' : 'enabled')
     ..pPM<Section>(5, _omitFieldNames ? '' : 'sections',
         subBuilder: Section.create)
+    ..aOB(6, _omitFieldNames ? '' : 'continuousEffect')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -343,6 +346,18 @@ class Strip extends $pb.GeneratedMessage {
 
   @$pb.TagNumber(5)
   $pb.PbList<Section> get sections => $_getList(4);
+
+  /// Effekte über alle Abschnitte hinweg durchlaufen lassen, statt jeden
+  /// Abschnitt für sich rechnen zu lassen (z. B. ein Lauflicht, das sich
+  /// durch eine Matrix schlängelt). Default false = bisheriges Verhalten.
+  @$pb.TagNumber(6)
+  $core.bool get continuousEffect => $_getBF(5);
+  @$pb.TagNumber(6)
+  set continuousEffect($core.bool value) => $_setBool(5, value);
+  @$pb.TagNumber(6)
+  $core.bool hasContinuousEffect() => $_has(5);
+  @$pb.TagNumber(6)
+  void clearContinuousEffect() => $_clearField(6);
 }
 
 class Section extends $pb.GeneratedMessage {

@@ -130,6 +130,13 @@ const Strip$json = {
       '6': '.ledato_stripes.Section',
       '10': 'sections'
     },
+    {
+      '1': 'continuous_effect',
+      '3': 6,
+      '4': 1,
+      '5': 8,
+      '10': 'continuousEffect'
+    },
   ],
 };
 
@@ -137,7 +144,8 @@ const Strip$json = {
 final $typed_data.Uint8List stripDescriptor = $convert.base64Decode(
     'CgVTdHJpcBIOCgJpZBgBIAEoCVICaWQSEgoEbmFtZRgCIAEoCVIEbmFtZRIkCg5sZWRzX3Blcl'
     '9tZXRlchgDIAEoDVIMbGVkc1Blck1ldGVyEhgKB2VuYWJsZWQYBCABKAhSB2VuYWJsZWQSMwoI'
-    'c2VjdGlvbnMYBSADKAsyFy5sZWRhdG9fc3RyaXBlcy5TZWN0aW9uUghzZWN0aW9ucw==');
+    'c2VjdGlvbnMYBSADKAsyFy5sZWRhdG9fc3RyaXBlcy5TZWN0aW9uUghzZWN0aW9ucxIrChFjb2'
+    '50aW51b3VzX2VmZmVjdBgGIAEoCFIQY29udGludW91c0VmZmVjdA==');
 
 @$core.Deprecated('Use sectionDescriptor instead')
 const Section$json = {

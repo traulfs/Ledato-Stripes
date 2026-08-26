@@ -62,6 +62,7 @@ pb.Strip stripToProto(LedStrip s) => pb.Strip(
   ledsPerMeter: s.ledsPerMeter,
   enabled: s.enabled,
   sections: [for (final sec in s.sections) sectionToProto(sec)],
+  continuousEffect: s.continuousEffect,
 );
 
 LedStrip stripFromProto(pb.Strip p) => LedStrip(
@@ -70,6 +71,7 @@ LedStrip stripFromProto(pb.Strip p) => LedStrip(
   ledsPerMeter: p.ledsPerMeter,
   enabled: p.enabled,
   sections: [for (final sec in p.sections) sectionFromProto(sec)],
+  continuousEffect: p.continuousEffect,
 );
 
 pb.Page pageToProto(LedPage page) => pb.Page(

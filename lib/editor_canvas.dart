@@ -524,11 +524,15 @@ class _StripPainter extends CustomPainter {
 
       for (var globalIndex = 0; globalIndex < leds.length; globalIndex++) {
         final (pos, sec, localIndex) = leds[globalIndex];
+        // Durchlaufende Effekte rechnen mit dem fortlaufenden Index über den
+        // ganzen Stripe, sonst je Abschnitt von vorn.
+        final count = s.continuousEffect ? leds.length : sec.ledCount;
+        final index = s.continuousEffect ? globalIndex : localIndex;
         final c =
             state.ddpColorFor(s.id, globalIndex) ??
             (state.simulate
-                ? ledColor(s, sec, sec.ledCount, localIndex, t)
-                : ledColor(s, sec, sec.ledCount, localIndex, 0));
+                ? ledColor(s, sec, count, index, t)
+                : ledColor(s, sec, count, index, 0));
         if (c.a == 0) continue;
         final lum = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
         if (state.glow > 0 && lum > 0.02) {

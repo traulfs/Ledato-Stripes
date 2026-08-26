@@ -15,11 +15,18 @@ import 'model.dart';
 Color ledColor(LedStrip s, StripSection sec, int count, int index, double t) {
   if (!s.enabled || count <= 0) return const Color(0x00000000);
   final n = count;
-  final i = sec.reversed ? n - 1 - index : index;
+  // Bei durchlaufenden Effekten zählt der Stripe als eine Einheit: Richtung
+  // und Zufalls-Seed kommen dann vom Stripe (erster Abschnitt) statt vom
+  // jeweiligen Abschnitt — sonst würde jede Zeile einer Matrix den globalen
+  // Index für sich spiegeln bzw. ihr eigenes Funkelmuster würfeln.
+  final reversed = s.continuousEffect
+      ? s.sections.first.reversed
+      : sec.reversed;
+  final i = reversed ? n - 1 - index : index;
   final pos = n == 1 ? 0.0 : i / (n - 1); // 0..1 entlang des Abschnitts
   // Geschwindigkeit nichtlinear mappen, damit der Regler feinfühlig ist.
   final speed = 0.05 + sec.speed * sec.speed * 4.0;
-  final seedHash = sec.hashCode;
+  final seedHash = s.continuousEffect ? s.hashCode : sec.hashCode;
 
   Color c;
   switch (sec.effect) {

@@ -32,6 +32,10 @@ message Strip {
   uint32 leds_per_meter = 3;
   bool enabled = 4;
   repeated Section sections = 5;
+  // Effekte über alle Abschnitte hinweg durchlaufen lassen, statt jeden
+  // Abschnitt für sich rechnen zu lassen (z. B. ein Lauflicht, das sich
+  // durch eine Matrix schlängelt). Default false = bisheriges Verhalten.
+  bool continuous_effect = 6;
 }
 
 message Section {

@@ -192,6 +192,25 @@ class _StripPanelState extends State<StripPanel> {
                       'LED-Abstand: ${(1000 / s.ledsPerMeter).toStringAsFixed(1).replaceAll('.', ',')} mm',
                     ),
                   ),
+                  if (s.sections.length > 1)
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Effekt durchlaufen lassen'),
+                      subtitle: Text(
+                        s.continuousEffect
+                            ? 'Ein Effekt über alle Abschnitte hinweg — '
+                                  'z. B. ein Lauflicht, das sich durch eine '
+                                  'Matrix schlängelt.'
+                            : 'Jeder Abschnitt rechnet seinen Effekt für sich.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      value: s.continuousEffect,
+                      onChanged: (v) {
+                        s.continuousEffect = v;
+                        state.changed();
+                      },
+                    ),
                   Text(
                     'Gesamt: ${s.ledCount}/$kMaxLedsPerStrip LEDs · '
                     '${fmtMeters(state.targetLengthMeters(s))}'

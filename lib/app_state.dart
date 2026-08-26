@@ -642,6 +642,11 @@ class AppState extends ChangeNotifier {
             angle: forward ? 0.0 : math.pi,
             ledCount: columns,
             color: _defaultColors[(strips.length + b) % _defaultColors.length],
+            // Langsames Lauflicht als Startbild: es wandert dank
+            // [LedStrip.continuousEffect] im Mäander durch die ganze Matrix
+            // und zeigt damit direkt, ob Zeilenfolge und Richtung stimmen.
+            effect: EffectType.chase,
+            speed: 0.12,
           ),
         );
       }
@@ -652,6 +657,7 @@ class AppState extends ChangeNotifier {
             : 'Matrix Z${firstRow + 1}–${firstRow + rowsPerStrip}',
         ledsPerMeter: ledsPerMeter,
         sections: sections,
+        continuousEffect: true,
       );
       strips.add(strip);
       created.add(strip);

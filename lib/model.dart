@@ -99,6 +99,7 @@ class LedStrip {
     this.ledsPerMeter = 60,
     required this.sections,
     this.enabled = true,
+    this.continuousEffect = false,
   });
 
   final String id;
@@ -107,6 +108,13 @@ class LedStrip {
   ledsPerMeter; // LED-Dichte: 30, 60 oder 144 Pixel pro Meter (gesamter Stripe)
   List<StripSection> sections;
   bool enabled;
+
+  /// Lässt Effekte über alle Abschnitte hinweg durchlaufen, als wäre der
+  /// Stripe ein einziges langes Stück — ein Lauflicht wandert dann z. B.
+  /// durch eine im Mäander verlegte Matrix, statt in jeder Zeile neu zu
+  /// beginnen. Aus (Standard) rechnet jeder Abschnitt für sich, was für
+  /// unabhängig platzierte Abschnitte meist das Gewollte ist.
+  bool continuousEffect;
 
   /// Gesamtzahl LEDs über alle Abschnitte hinweg.
   int get ledCount => sections.fold(0, (sum, sec) => sum + sec.ledCount);
@@ -118,6 +126,7 @@ class LedStrip {
     ledsPerMeter: ledsPerMeter,
     sections: [for (final sec in sections) sec.clone()],
     enabled: enabled,
+    continuousEffect: continuousEffect,
   );
 
   /// Liest eine Konfiguration im alten JSON-Format (vor Einführung von YAML,
