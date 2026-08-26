@@ -766,6 +766,32 @@ class AppState extends ChangeNotifier {
   Uint8List exportBytes() =>
       Uint8List.fromList(documentToProto(pages, activePageIndex).writeToBuffer());
 
+  // ---------- Neue (leere) Konfiguration ----------
+
+  /// Verwirft die komplette Konfiguration und startet mit dem Zustand, den
+  /// auch ein allererster App-Start hätte: eine leere Page mit einem
+  /// einzelnen Default-Stripe, ohne Hintergrundbild.
+  Future<void> newDocument() async {
+    pages = [
+      LedPage(id: DateTime.now().microsecondsSinceEpoch.toString(), name: 'Page 1'),
+    ];
+    activePageIndex = 0;
+    pageElapsedMs = 0;
+    background = null;
+    selection.clear();
+    selectedId = null;
+    selectedSectionIndex = 0;
+    // addStrip() ruft changed() und würde damit einen Undo-Schritt anlegen —
+    // deshalb erst den Stripe erzeugen, dann die Historie leeren.
+    addStrip();
+    _undoStack.clear();
+    _redoStack.clear();
+    _pendingUndo = null;
+    _undoCoalesceTimer?.cancel();
+    notifyListeners();
+    await save();
+  }
+
   Future<void> importBytes(Uint8List bytes) async {
     final doc = pb.Document.fromBuffer(bytes);
     final result = documentFromProto(doc);
@@ -781,8 +807,14 @@ class AppState extends ChangeNotifier {
     selection.clear();
     selectedId = null;
     selectedSectionIndex = 0;
+    // Undo darf nicht in die vorher geladene Konfiguration zurückführen.
+    _undoStack.clear();
+    _redoStack.clear();
+    _pendingUndo = null;
+    _undoCoalesceTimer?.cancel();
     await _reloadActiveBackground();
-    changed();
+    notifyListeners();
+    _scheduleSave();
   }
 
   @override

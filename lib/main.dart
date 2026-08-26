@@ -22,6 +22,7 @@ void main() {
 enum _FileAction {
   pickBackground,
   clearBackground,
+  newConfig,
   exportConfig,
   importConfig,
   sceneWidth,
@@ -145,6 +146,35 @@ class _EditorScreenState extends State<EditorScreen>
     } catch (e) {
       _showError('Konfiguration konnte nicht gespeichert werden: $e');
     }
+  }
+
+  /// Verwirft die aktuelle Konfiguration und beginnt mit einer leeren Szene.
+  /// Weil das nicht per Undo zurückzuholen ist, vorher nachfragen.
+  Future<void> _newConfig() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Neue Konfiguration'),
+        content: const Text(
+          'Alle Seiten, Stripes und das Hintergrundbild werden verworfen und '
+          'durch eine leere Szene ersetzt. Das lässt sich nicht rückgängig '
+          'machen — ungesicherte Arbeit vorher über „Konfiguration speichern“ '
+          'sichern.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Neu beginnen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await state.newDocument();
   }
 
   Future<void> _importConfig() async {
@@ -441,6 +471,8 @@ class _EditorScreenState extends State<EditorScreen>
                           _pickBackground();
                         case _FileAction.clearBackground:
                           state.clearBackground();
+                        case _FileAction.newConfig:
+                          _newConfig();
                         case _FileAction.exportConfig:
                           _exportConfig();
                         case _FileAction.importConfig:
@@ -473,6 +505,13 @@ class _EditorScreenState extends State<EditorScreen>
                           ),
                         ),
                       const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: _FileAction.newConfig,
+                        child: ListTile(
+                          leading: Icon(Icons.note_add_outlined),
+                          title: Text('Neue Konfiguration'),
+                        ),
+                      ),
                       const PopupMenuItem(
                         value: _FileAction.exportConfig,
                         child: ListTile(
