@@ -28,3 +28,7 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/icon/app_icon.png"
+  # Windows fehlt hier bewusst: flutter_launcher_icons schreibt in die .ico
+  # nur eine einzige Größe. Das Windows-Icon erzeugt stattdessen
+  # tools/make_windows_icon.py aus derselben Quelldatei, mit allen Größen
+  # von 16 bis 256 px.

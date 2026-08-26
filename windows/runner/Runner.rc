@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "de.taskit" "\0"
-            VALUE "FileDescription", "ledato_stripes" "\0"
+            VALUE "FileDescription", "Ledato Stripes" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "ledato_stripes" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 de.taskit. All rights reserved." "\0"
             VALUE "OriginalFilename", "ledato_stripes.exe" "\0"
-            VALUE "ProductName", "ledato_stripes" "\0"
+            VALUE "ProductName", "Ledato Stripes" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
