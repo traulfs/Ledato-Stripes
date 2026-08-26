@@ -38,6 +38,24 @@ Uint8List _ddpPacket({
   return packet;
 }
 
+/// Schickt [packet] so lange, bis [frames] einen Eintrag hat oder die Frist
+/// abläuft. UDP darf Pakete verwerfen: ohne Wiederholung hängt der Test an
+/// einer einzigen Zustellung, und genau die ist im Windows-CI schon
+/// ausgeblieben. Mehrfach empfangene Kopien sind unkritisch — geprüft wird,
+/// dass *nur* das erlaubte Paket durchkommt, nicht wie oft.
+Future<void> _sendUntilReceived(
+  RawDatagramSocket sender,
+  Uint8List packet,
+  DdpServer server,
+  List<(int, int, List<Color>)> frames,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (frames.isEmpty && DateTime.now().isBefore(deadline)) {
+    sender.send(packet, InternetAddress.loopbackIPv4, server.port);
+    await Future.delayed(const Duration(milliseconds: 20));
+  }
+}
+
 void main() {
   test(
     'DdpServer dekodiert ein echtes DDP-Paket (Ziel, Offset, Farben)',
@@ -61,16 +79,10 @@ void main() {
           [0, 0, 255],
         ],
       );
-      sender.send(packet, InternetAddress.loopbackIPv4, server.port);
+      await _sendUntilReceived(sender, packet, server, frames);
 
-      // Auf den asynchronen Empfang warten.
-      final deadline = DateTime.now().add(const Duration(seconds: 2));
-      while (frames.isEmpty && DateTime.now().isBefore(deadline)) {
-        await Future.delayed(const Duration(milliseconds: 20));
-      }
-
-      expect(frames, hasLength(1));
-      final (dest, start, colors) = frames.single;
+      expect(frames, isNotEmpty);
+      final (dest, start, colors) = frames.first;
       expect(dest, 3);
       expect(start, 0);
       expect(colors, [
@@ -102,15 +114,10 @@ void main() {
           [10, 20, 30],
         ],
       );
-      sender.send(packet, InternetAddress.loopbackIPv4, server.port);
+      await _sendUntilReceived(sender, packet, server, frames);
 
-      final deadline = DateTime.now().add(const Duration(seconds: 2));
-      while (frames.isEmpty && DateTime.now().isBefore(deadline)) {
-        await Future.delayed(const Duration(milliseconds: 20));
-      }
-
-      expect(frames, hasLength(1));
-      final (dest, start, colors) = frames.single;
+      expect(frames, isNotEmpty);
+      final (dest, start, colors) = frames.first;
       expect(dest, 1);
       expect(start, 5);
       expect(colors, [const Color.fromARGB(255, 10, 20, 30)]);
@@ -157,25 +164,20 @@ void main() {
       );
       // Gültiges Paket zur Kontrolle, damit wir wissen, dass wir lange genug
       // gewartet haben.
-      sender.send(
-        _ddpPacket(
-          destination: 2,
-          channelOffset: 0,
-          rgbPixels: [
-            [9, 9, 9],
-          ],
-        ),
-        InternetAddress.loopbackIPv4,
-        server.port,
+      final control = _ddpPacket(
+        destination: 2,
+        channelOffset: 0,
+        rgbPixels: [
+          [9, 9, 9],
+        ],
       );
+      await _sendUntilReceived(sender, control, server, frames);
 
-      final deadline = DateTime.now().add(const Duration(seconds: 2));
-      while (frames.isEmpty && DateTime.now().isBefore(deadline)) {
-        await Future.delayed(const Duration(milliseconds: 20));
-      }
-
-      expect(frames, hasLength(1));
-      expect(frames.single.$1, 2);
+      // Angekommen sein darf ausschließlich das Kontrollpaket: die beiden
+      // davor gesendeten müssen verworfen worden sein, egal wie oft das
+      // Kontrollpaket wiederholt wurde.
+      expect(frames, isNotEmpty);
+      expect(frames.map((f) => f.$1), everyElement(2));
     },
   );
 }
