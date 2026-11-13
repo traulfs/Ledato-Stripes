@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Farbzeile: Vorschau-Kachel öffnet einen einfachen HSV-Farbwähler.
 class ColorRow extends StatelessWidget {

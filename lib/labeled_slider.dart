@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Beschrifteter Schieberegler mit Wertanzeige rechts — kompaktes
 /// Standardlayout, das in mehreren Dialogen wiederverwendet wird.
